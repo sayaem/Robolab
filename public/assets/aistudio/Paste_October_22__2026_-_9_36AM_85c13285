@@ -1,0 +1,1092 @@
+RoboLab — Full Product Requirements Document (PRD)
+
+Advanced Mobile Robotics Engineering & Simulation Platform
+
+Version: 1.0
+Product type: Native Android application
+Working name: RoboLab
+Primary objective: Build a premium, interactive, zero-cost virtual robotics laboratory that enables users to design, program, simulate, and debug robots on Android devices.
+
+---
+
+1. Product Vision
+
+RoboLab is a mobile-first robotics engineering platform that transforms an Android phone into a virtual robotics workshop.
+
+Users should be able to construct robots from individual components, configure their mechanical properties, program their behavior, run physics-based simulations, observe sensor outputs, and diagnose failures without purchasing physical robotics hardware.
+
+The product must combine the visual quality of a modern 3D application with the practical functionality of an engineering tool.
+
+RoboLab must not be merely a 3D viewer, a static robot gallery, a collection of educational articles, or a chatbot.
+
+Core product promise: Build it. Program it. Simulate it. Break it. Improve it.
+
+1.1 Product principles
+
+1. Visual quality must be premium, polished, and consistent.
+2. Every primary interface must perform a real function.
+3. Simulations must use actual implemented calculations rather than fabricated results.
+4. Projects must persist across app restarts.
+5. The app must remain usable on mid-range Android devices.
+6. Core functionality must work offline.
+7. The MVP must not depend on paid AI APIs or subscriptions.
+8. Advanced features must be introduced incrementally without destabilizing completed functionality.
+
+---
+
+2. Target Audience
+
+Primary users
+
+- Students learning robotics, automation, and embedded systems.
+- Beginners exploring motors, sensors, and robot control.
+- Hobbyists who cannot afford physical robotics kits.
+- Programmers experimenting with robot behavior.
+- Engineering students studying kinematics, motion, and control systems.
+
+Secondary users
+
+- Robotics clubs and STEM educators.
+- Developers prototyping basic autonomous behaviors.
+- Experienced hobbyists experimenting with simulated robot designs.
+
+Supported experience levels
+
+- Beginner: guided experiments and visual programming.
+- Intermediate: component configuration, scripting, and debugging.
+- Advanced: kinematics, control systems, path planning, and custom robot configurations.
+
+---
+
+3. Platform and Technical Architecture
+
+3.1 Required development workflow
+
+The entire development process must accommodate the following workflow:
+
+1. Google AI Studio generates and refines the source code.
+2. GitHub stores the complete project and version history.
+3. Codemagic builds the Android application in the cloud.
+4. An APK is installed on a physical Android device for testing.
+5. Bugs and performance issues are fixed through incremental development.
+
+No requirement should assume a powerful local computer or a paid cloud build service.
+
+3.2 Recommended technology stack
+
+Layer| Technology| Responsibility
+Native application| Kotlin| Android integration and application lifecycle
+Native interface| Jetpack Compose| Navigation, settings, project management and native screens
+3D simulation| Godot Engine 4.x| 3D scene, camera, models, physics and interactive simulation
+Android/3D bridge| Godot Android library or supported embedding integration| Communication between the native shell and simulator
+Simulation logic| GDScript and Godot physics APIs| Robot control, sensors, simulation and experiment logic
+Project storage| Room + versioned JSON project files| Metadata, robot designs and experiment persistence
+Preferences| DataStore| Theme, editor settings and user preferences
+Local assets| Bundled resources and downloadable optional asset packs| Robot models, materials and environments
+Build system| Gradle and Codemagic| Compilation, testing and APK generation
+Source control| GitHub| Version control and reproducible builds
+
+Architecture constraint: Do not assume that a standard Kotlin Android project can directly run an arbitrary Godot scene. Verify the supported Godot Android embedding approach and Gradle integration first.
+
+If embedding creates an unacceptable technical or build obstacle, use a standalone Godot Android application with a fully designed native-feeling interface. Preserve the product requirements and document the trade-off instead of shipping a broken hybrid application.
+
+The chosen architecture must be validated with a minimal working prototype before implementing the full feature set.
+
+3.3 Zero-budget requirements
+
+- No paid AI API is required for core functionality.
+- No mandatory backend or account system.
+- No mandatory cloud database.
+- No paid 3D asset dependency.
+- Use original procedural assets, properly licensed free assets, and self-created models.
+- No mandatory analytics service.
+- Offline access to saved projects and core simulations.
+- Optional cloud synchronization must not be required for MVP functionality.
+
+Third-party licenses must be respected and documented.
+
+---
+
+4. Application Information Architecture
+
+The application should have five principal destinations.
+
+4.1 Home
+
+The central launchpad for the robotics laboratory.
+
+4.2 Workshop
+
+The interactive robot assembly and configuration environment.
+
+4.3 Simulator
+
+The real-time 3D simulation workspace.
+
+4.4 Programming Lab
+
+The visual programming and controller development environment.
+
+4.5 Projects
+
+Saved robot designs, experiments, templates, and simulation results.
+
+Settings, documentation, help, and learning resources should be accessible without cluttering the primary navigation.
+
+The application must maintain consistent navigation, back behavior, project state, and visual language across all sections.
+
+---
+
+5. Home Dashboard
+
+5.1 Visual requirements
+
+The home screen should resemble a premium engineering application rather than a generic student dashboard.
+
+Include:
+
+- A restrained brand header.
+- A prominent 3D robot preview or interactive hero scene.
+- A primary “Create Robot” action.
+- A “Continue Project” action when a saved project exists.
+- Recent projects with meaningful thumbnails.
+- Featured robotics experiments.
+- Progress through optional learning challenges.
+- Quick access to the workshop, simulator, and programming lab.
+
+Use a dark graphite engineering theme as the primary visual direction, with carefully controlled cyan or electric-blue accents. Provide a light theme as an optional alternative.
+
+Use subtle transitions, depth, realistic material previews, and high-quality typography. Avoid excessive gradients, unnecessary glowing effects, and decorative panels that reduce workspace clarity.
+
+5.2 Functional requirements
+
+- Recent projects must load real saved data.
+- Project cards must open their corresponding projects.
+- Creating a robot must open a functional creation workflow.
+- Featured experiments must open actual experiments.
+- Empty states must guide new users toward creating their first project.
+- Dashboard information must never depend on fabricated activity.
+
+---
+
+6. Robot Workshop
+
+The workshop is the core design environment.
+
+6.1 Three-dimensional workspace
+
+Provide an interactive 3D viewport supporting:
+
+- Orbit camera controls.
+- Pinch-to-zoom.
+- Pan.
+- Perspective and orthographic views.
+- Grid and axis visualization.
+- Ground plane and adjustable environment lighting.
+- Component selection.
+- Selection highlighting.
+- Translation and rotation gizmos.
+- Snap-to-grid placement.
+- Undo and redo.
+- Camera reset.
+- Frame selected component.
+
+Touch controls must be designed for phones rather than copied directly from desktop CAD software.
+
+Users should be able to manipulate objects without precision mouse input.
+
+6.2 Component library
+
+Provide categorized components.
+
+Structural components
+
+- Chassis and base plates.
+- Frames and brackets.
+- Rigid links.
+- Mounting plates.
+- Wheels and casters.
+- Generic primitives for custom structures.
+
+Motion components
+
+- DC motor.
+- Servo motor.
+- Revolute joint.
+- Prismatic joint.
+- Fixed joint.
+- Wheel drive assembly.
+- Generic articulated arm links.
+
+Sensor components
+
+- Distance sensor.
+- Ultrasonic sensor model.
+- Infrared proximity sensor.
+- Contact sensor.
+- IMU model.
+- GPS-like position sensor for suitable outdoor simulations.
+- RGB camera model.
+- 2D LiDAR model.
+
+Each sensor must have an explicit implementation status and a defined output model.
+
+Control and power components
+
+- Simulated battery.
+- Motor driver.
+- Controller board representation.
+- Signal and power connection points.
+- Generic controller component.
+
+These are simulated components. Do not imply electrical circuit-level accuracy unless a separate electrical model is implemented.
+
+6.3 Component manipulation
+
+Users must be able to:
+
+- Add a component.
+- Select and deselect components.
+- Move and rotate components.
+- Attach components to supported connection points.
+- Delete components.
+- Duplicate components.
+- Edit supported properties.
+- Inspect the component hierarchy.
+- Rename components.
+- Save and reload the assembly.
+
+Deleting a connected component must either preserve a valid project state or clearly explain which connections will be removed.
+
+6.4 Robot hierarchy
+
+Every robot must have a structured scene graph.
+
+Example:
+
+Robot
+
+- Chassis
+  - Left wheel joint
+  - Left wheel
+  - Right wheel joint
+  - Right wheel
+  - Controller
+  - Distance sensor
+
+Articulated robots must support parent-child relationships and joint constraints.
+
+The interface must display invalid, disconnected, or unsupported configurations clearly.
+
+6.5 Component property inspector
+
+Depending on component type, expose:
+
+- Position and rotation.
+- Dimensions.
+- Mass.
+- Material.
+- Friction.
+- Joint type.
+- Joint limits.
+- Motor speed.
+- Motor torque limit.
+- Sensor field of view.
+- Sensor range.
+- Update frequency.
+- Connection status.
+
+Unsupported properties must not appear as functional controls.
+
+---
+
+7. Robot Assembly Validation
+
+RoboLab must validate robot assemblies before running simulations.
+
+Checks should include:
+
+- Missing required components.
+- Invalid joint references.
+- Disconnected moving parts.
+- Circular or invalid hierarchy relationships.
+- Missing controller assignments.
+- Unsupported component combinations.
+- Impossible or contradictory joint limits.
+- Missing required sensor configuration.
+
+Validation results must provide actionable messages.
+
+Example:
+
+“Left wheel has no valid drive joint. Attach a supported rotational joint before running differential-drive control.”
+
+The validator must not silently repair a project in a way that changes the user's intended design.
+
+---
+
+8. Physics and Simulation Engine
+
+This is the most technically important subsystem.
+
+8.1 Core physics capabilities
+
+Implement actual simulation for supported configurations:
+
+- Rigid-body motion.
+- Gravity.
+- Collision detection and response.
+- Joint constraints supported by the chosen engine.
+- Mass and inertia where supported.
+- Surface friction.
+- Basic motor-driven motion.
+- Configurable simulation speed.
+- Pause, resume, and reset.
+- Fixed-step simulation updates.
+- Simulation time and status.
+
+The physics engine should be selected based on its supported features, performance, Android compatibility, and licensing.
+
+Use Godot's available physics systems where appropriate rather than attempting to create an entire physics engine from scratch.
+
+8.2 Simulation controls
+
+Provide:
+
+- Start.
+- Pause.
+- Resume.
+- Reset.
+- Step one simulation tick when supported.
+- Speed selection.
+- Real-time versus simulation-time display.
+- Error and warning reporting.
+- Performance indicator.
+
+The simulation must not run uncontrolled when the user leaves the simulator, backgrounds the app, or switches projects.
+
+8.3 Simulation accuracy
+
+Every simulation must distinguish between:
+
+1. Visual representation: what the user sees.
+2. Physics model: how objects move and interact.
+3. Sensor model: what measurements are generated.
+4. Control model: how the robot responds to commands.
+
+Do not represent visual approximations as validated engineering-grade physics.
+
+Provide documentation describing assumptions, supported configurations, and known limitations.
+
+---
+
+9. Differential-Drive Robot
+
+The first fully functional robot should be a two-wheel differential-drive robot.
+
+This robot will validate the complete pipeline before more complex robotic systems are added.
+
+9.1 Required components
+
+- Chassis.
+- Left wheel.
+- Right wheel.
+- Drive joints.
+- Optional caster.
+- Controller.
+- Distance sensor.
+- Optional IMU.
+
+9.2 Required behavior
+
+Users must be able to:
+
+- Drive forward.
+- Drive backward.
+- Rotate left and right.
+- Control left and right wheel speeds independently.
+- Set wheel radius and wheel separation.
+- Observe the robot moving through a simulated environment.
+- Detect obstacles.
+- Stop the robot when an obstacle is detected.
+- Reset the robot to its initial state.
+
+9.3 Kinematics
+
+Implement the standard differential-drive equations.
+
+Let:
+
+- (v_L) = left wheel's linear velocity.
+- (v_R) = right wheel's linear velocity.
+- (r) = wheel radius.
+- (b) = distance between the wheels.
+
+Then:
+
+[
+v=\frac{v_R+v_L}{2}
+]
+
+[
+\omega=\frac{v_R-v_L}{b}
+]
+
+Wheel angular velocity is related to linear velocity by:
+
+[
+v_L=r\omega_L,\qquad v_R=r\omega_R
+]
+
+These calculations must be implemented and tested, not merely displayed in the UI.
+
+The physics engine remains responsible for collisions and physical interactions. Kinematics and physics must be coordinated to avoid contradictory motion models.
+
+---
+
+10. Advanced Robotics Features
+
+These features should be developed only after the core simulator is reliable.
+
+10.1 Robotic arms
+
+Support an articulated arm with multiple revolute joints.
+
+Features:
+
+- Joint configuration.
+- Joint-angle controls.
+- Joint limits.
+- Forward kinematics.
+- End-effector position.
+- Target markers.
+- Basic inverse-kinematics solving.
+- Collision checks against the environment.
+- Animation and trajectory visualization.
+
+Start with a two-link planar arm, then progress to a three-joint arm and eventually a six-axis model.
+
+Do not claim universal inverse-kinematics support. The solver must specify which robot structures it supports.
+
+10.2 Sensor visualization
+
+Distance sensors
+
+Display the measured distance and detection state.
+
+LiDAR
+
+Implement a 2D ray-casting scanner with configurable angular resolution and range.
+
+Render the rays and measured points in the scene. A 3D point-cloud display may be introduced later.
+
+IMU
+
+Provide simulated orientation and acceleration measurements with documented assumptions.
+
+Camera
+
+Introduce a simulated camera feed or rendered sensor view only after the scene rendering and sensor pipeline are working.
+
+10.3 Autonomous navigation
+
+Implement in stages:
+
+1. Known-grid navigation.
+2. Grid-based obstacle avoidance.
+3. A* path planning.
+4. Waypoint following.
+5. Obstacle detection and stopping.
+6. Dynamic replanning where supported.
+
+The robot must follow a computed path rather than simply teleporting along a displayed line.
+
+10.4 Control systems
+
+Advanced releases may include:
+
+- PID controllers.
+- Motor speed control.
+- Heading control.
+- Error graphs.
+- Controller tuning.
+- Overshoot and settling-time visualization.
+- Repeatable experiments.
+
+All displayed controller outputs must correspond to the actual simulation.
+
+---
+
+11. Programming Lab
+
+The programming environment should make robot behavior accessible to both beginners and advanced users.
+
+11.1 Visual programming
+
+Implement a typed, node-based or block-based editor.
+
+Initial blocks:
+
+- Start.
+- Wait.
+- Set wheel speed.
+- Drive forward.
+- Rotate.
+- Read distance sensor.
+- If/else.
+- Repeat.
+- While.
+- Set variable.
+- Compare value.
+- Stop robot.
+- Log message.
+
+The editor must support:
+
+- Dragging blocks.
+- Connecting compatible blocks.
+- Editing parameters.
+- Deleting blocks.
+- Reordering supported operations.
+- Saving and loading programs.
+- Syntax or connection validation.
+- Execution and stop controls.
+- Error reporting.
+
+11.2 Execution engine
+
+Programs must execute through a defined interpreter or compiler.
+
+Requirements:
+
+- Defined execution semantics.
+- Controlled update scheduling.
+- Supported sensor access.
+- Bounded execution or cancellation.
+- Protection against infinite loops freezing the UI.
+- Clear runtime errors.
+- Program state persistence.
+
+Do not implement visual blocks as decorative objects that have no effect on the robot.
+
+11.3 Example program
+
+A basic obstacle-avoidance program should behave as follows:
+
+1. Read the distance sensor.
+2. If the distance exceeds a threshold, drive forward.
+3. Otherwise, stop.
+4. Rotate to a new heading.
+5. Continue scanning.
+6. Repeat until stopped by the user.
+
+The robot's behavior must emerge from the program and sensor values.
+
+11.4 Text-based programming
+
+Later releases may introduce a constrained Python-like scripting language or supported Python runtime.
+
+Requirements include:
+
+- A documented API.
+- Code editor.
+- Syntax validation.
+- Execution limits.
+- Safe interaction with simulation objects.
+- Debugging information.
+
+Do not promise arbitrary Python compatibility until a real Python runtime and its Android packaging have been validated.
+
+---
+
+12. Learning and Experiment System
+
+Include a built-in robotics learning environment.
+
+Each experiment should contain:
+
+- Objective.
+- Required components.
+- Setup instructions.
+- Starter robot.
+- Programming challenge.
+- Expected behavior.
+- Success conditions.
+- Explanation of relevant engineering concepts.
+
+Initial experiments:
+
+1. Move a robot in a straight line.
+2. Perform a controlled turn.
+3. Compare different wheel speeds.
+4. Stop before an obstacle.
+5. Navigate a simple maze.
+6. Control a robotic arm.
+7. Demonstrate PID control.
+8. Compare two navigation algorithms.
+
+Experiments must be playable and verifiable.
+
+Achievements should be awarded based on actual completion conditions rather than opening a screen or pressing a button.
+
+---
+
+13. Project Management and Persistence
+
+Project persistence is mandatory.
+
+13.1 Project data
+
+A saved project must include:
+
+- Project identifier.
+- Name and description.
+- Project format version.
+- Robot components.
+- Component properties.
+- Component relationships.
+- Joint configurations.
+- Sensor configurations.
+- Controller assignments.
+- Program data.
+- Environment settings.
+- Relevant simulation settings.
+- Creation and modification timestamps.
+
+13.2 Save and recovery
+
+Implement:
+
+- Explicit save.
+- Autosave with safe timing.
+- Save status indicator.
+- Unsaved-change warnings.
+- Project duplication.
+- Rename.
+- Delete with confirmation.
+- Project restoration after application restart.
+- Handling of invalid or outdated project files.
+- Schema migration when formats change.
+
+Use a versioned project format and safe writes. Corrupting one project must not corrupt every saved project.
+
+13.3 Import and export
+
+Provide a documented native RoboLab project format.
+
+Later releases may support compatible robot description formats, such as a carefully scoped URDF importer/exporter.
+
+Import support must validate files and report unsupported elements instead of silently discarding them.
+
+---
+
+14. Visual Design System
+
+RoboLab must look like a premium engineering product.
+
+14.1 Design language
+
+- Modern industrial minimalism.
+- High-quality 3D rendering.
+- Consistent typography.
+- Restrained accent colors.
+- Carefully designed spacing.
+- Smooth transitions.
+- Clear information hierarchy.
+- Functional tooltips and contextual help.
+- High-contrast text and controls.
+
+14.2 3D rendering requirements
+
+Where supported by the device:
+
+- Physically based materials.
+- Realistic lighting.
+- Contact shadows.
+- Ambient occlusion or suitable alternatives.
+- Reflections where practical.
+- High-quality robot materials.
+- Depth-aware selection highlighting.
+- Smooth camera movement.
+- Clear technical overlays.
+
+Advanced rendering effects must be optional or quality-scaled. Do not sacrifice usability to force expensive graphics onto low-end phones.
+
+14.3 Adaptive graphics
+
+Provide three graphics profiles:
+
+Performance
+
+- Reduced shadows.
+- Lower rendering resolution where appropriate.
+- Limited effects.
+- Reduced sensor visualization density.
+
+Balanced
+
+- Moderate lighting and shadows.
+- Standard model quality.
+- Smooth camera controls.
+
+High Quality
+
+- Enhanced lighting.
+- Higher-quality shadows.
+- Additional visual effects where supported.
+
+The application must detect rendering failures and allow users to reduce graphics settings.
+
+14.4 Responsive interface
+
+Support:
+
+- Portrait and landscape layouts.
+- Different Android screen sizes.
+- Touch-friendly controls.
+- Safe areas and system navigation.
+- Keyboard input when available.
+- Accessible text scaling.
+- Clear selection and interaction states.
+
+The simulation viewport should receive sufficient screen space. Advanced panels may use collapsible side sheets, bottom sheets, or dedicated inspector views.
+
+---
+
+15. Performance Requirements
+
+RoboLab must target practical performance on real Android hardware.
+
+Initial engineering targets:
+
+- Responsive navigation and project management.
+- Smooth camera interaction in the default test scene.
+- Target approximately 30 FPS on the defined baseline device.
+- Target 60 FPS on capable devices when the scene permits.
+- No unbounded memory growth during repeated simulations.
+- No application crash when pausing or resuming a simulation.
+- No long-running simulation on the UI thread.
+- Safe cancellation of simulation and program execution.
+
+These are targets to measure, not guarantees across all Android phones.
+
+15.1 Performance safeguards
+
+- Use low-poly models where appropriate.
+- Use level-of-detail strategies when beneficial.
+- Limit active rigid bodies.
+- Limit sensor rays and update frequencies.
+- Pool reusable objects when profiling justifies it.
+- Avoid unnecessary allocations in simulation loops.
+- Use efficient rendering and physics updates.
+- Provide simplified environments for lower-end devices.
+
+A complex six-axis robot with dense collision geometry and high-resolution LiDAR must not be treated as equivalent in cost to a simple wheeled robot.
+
+---
+
+16. Offline-First Operation
+
+The following must work without internet:
+
+- Launching the app.
+- Opening saved projects.
+- Editing robot assemblies.
+- Running supported simulations.
+- Executing supported visual programs.
+- Accessing bundled tutorials.
+- Saving project changes.
+- Viewing previous experiment results.
+
+Internet access may be used for optional updates or user-initiated imports, but no core workflow should require an online AI service.
+
+No user account is required for the MVP.
+
+---
+
+17. Security and Stability
+
+- Validate imported project files.
+- Avoid arbitrary execution of untrusted code.
+- Limit program execution and support cancellation.
+- Handle malformed project data safely.
+- Request only necessary Android permissions.
+- Do not request Accessibility permissions or unrelated sensitive permissions.
+- Do not collect unnecessary personal information.
+- Keep user projects local by default.
+- Handle low-memory conditions gracefully.
+- Provide meaningful error messages instead of blank screens.
+
+If future text scripting is introduced, it must use a controlled runtime with a documented API rather than unrestricted access to the Android system.
+
+---
+
+18. Testing and Quality Assurance
+
+Testing must cover both software correctness and simulation correctness.
+
+18.1 Unit tests
+
+Test:
+
+- Kinematic equations.
+- Unit conversions.
+- Project serialization.
+- Project migration.
+- Component validation.
+- Joint-limit validation.
+- Program interpreter behavior.
+- Controller calculations.
+- Path-planning algorithms.
+
+18.2 Integration tests
+
+Test:
+
+- Creating and saving a robot.
+- Closing and reopening a project.
+- Editing component properties.
+- Running and stopping simulations.
+- Sensor data flowing into programs.
+- Programs controlling robot motion.
+- Importing and validating project files.
+- Native Android lifecycle and simulator lifecycle interactions.
+
+18.3 Physics validation
+
+Include repeatable test scenarios.
+
+Examples:
+
+- Equal wheel speeds should produce straight-line motion on a symmetric setup.
+- Opposite wheel speeds should produce rotation.
+- A robot should not pass through a configured solid obstacle.
+- Joint-limit violations should be constrained or reported according to the implemented physics model.
+- A robot stopped by a program should no longer receive drive commands from that program.
+
+Tests must use tolerances appropriate to the numerical method and physics engine.
+
+18.4 Regression policy
+
+Every phase must preserve completed functionality.
+
+Do not replace real saved projects with sample data during development. Do not reset the project schema without migration. Do not remove working features simply to simplify a new implementation.
+
+---
+
+19. Monetization Strategy
+
+Monetization is a future possibility, not an MVP dependency.
+
+Potential models:
+
+- Optional premium robot component packs.
+- Advanced experiment collections.
+- Specialized engineering learning modules.
+- Optional cloud project synchronization.
+- Educational licensing for institutions.
+
+Core project creation, basic robot assembly, and the initial simulation engine should remain available without payment.
+
+Do not implement subscriptions, payments, or advertisements in the initial release. First validate product quality and genuine user interest.
+
+---
+
+20. Development Roadmap
+
+The following stages define the implementation sequence. Each stage must be independently buildable and testable.
+
+Phase 0 — Technical feasibility
+
+Build a minimal Android application that launches a real 3D scene.
+
+Deliverables:
+
+- Verified Android export.
+- Verified Codemagic build.
+- Basic 3D camera controls.
+- One robot model.
+- A small physics test.
+- Confirmed app installation on a physical Android phone.
+
+Exit criterion: A reproducible cloud build installs and runs without crashing.
+
+Phase 1 — Native foundation
+
+Implement:
+
+- Application navigation.
+- Premium design system.
+- Home dashboard.
+- Settings.
+- Local project database.
+- Versioned project serialization.
+- Basic error handling.
+- Theme selection.
+
+Exit criterion: The application builds, launches, and preserves project metadata across restarts.
+
+Phase 2 — Interactive 3D workshop
+
+Implement:
+
+- 3D viewport.
+- Camera controls.
+- Component library.
+- Component placement and selection.
+- Object manipulation.
+- Property inspector.
+- Robot hierarchy.
+- Save and reload.
+
+Exit criterion: A user can build, save, reopen, and modify a basic robot.
+
+Phase 3 — Functional differential-drive simulation
+
+Implement:
+
+- Rigid bodies and collisions.
+- Drive joints.
+- Wheel motor control.
+- Differential-drive kinematics.
+- Simulation controls.
+- Ground and obstacle environments.
+- Distance sensor.
+- Telemetry.
+
+Exit criterion: A robot moves according to its actual configuration and responds correctly to obstacles.
+
+Phase 4 — Visual programming
+
+Implement:
+
+- Visual block editor.
+- Program validation.
+- Interpreter.
+- Motor and sensor blocks.
+- Conditional logic.
+- Loops.
+- Execution controls.
+- Runtime debugging.
+
+Exit criterion: A user can write a program that controls a robot and observe the resulting behavior.
+
+Phase 5 — Engineering tools
+
+Implement:
+
+- Robotic arm models.
+- Supported forward kinematics.
+- Basic inverse kinematics.
+- Joint visualization.
+- 2D LiDAR.
+- Path planning.
+- Controller graphs.
+
+Exit criterion: Each added subsystem passes dedicated correctness tests and works within defined performance limits.
+
+Phase 6 — Advanced graphics and optimization
+
+Implement:
+
+- Material improvements.
+- Lighting and shadow refinements.
+- Adaptive graphics.
+- Better model assets.
+- Performance profiling.
+- Memory optimization.
+- Landscape workspace improvements.
+
+Exit criterion: The defined benchmark scenes meet the performance targets on the selected test devices.
+
+Phase 7 — Release preparation
+
+Implement:
+
+- Complete regression testing.
+- First-launch guidance.
+- Recovery and error states.
+- Project format validation.
+- Release signing configuration.
+- Reproducible APK builds.
+- Release documentation.
+
+Exit criterion: A clean release build installs, survives lifecycle changes, and preserves user projects.
+
+---
+
+21. MVP Definition
+
+The MVP is not a collection of attractive mockups.
+
+It must contain one complete, working robotics workflow:
+
+1. Open RoboLab.
+2. Create a robot project.
+3. Assemble a differential-drive robot.
+4. Configure the wheels and distance sensor.
+5. Place the robot in a test environment.
+6. Run the simulation.
+7. Observe real movement and sensor measurements.
+8. Program basic obstacle avoidance using visual blocks.
+9. Execute the program.
+10. Save the project.
+11. Restart the application.
+12. Reopen the project and continue working.
+
+If this workflow does not work, the MVP is not complete, regardless of how polished the screenshots look.
+
+---
+
+22. Acceptance Criteria
+
+A release candidate is acceptable only when:
+
+- The Android application builds through the chosen cloud-build workflow.
+- The main screens navigate correctly.
+- The 3D viewport is interactive.
+- Components can be added and configured.
+- The robot hierarchy is persisted.
+- Supported physics simulations run correctly.
+- The distance sensor produces actual measurements.
+- Visual programs affect the robot.
+- Invalid assemblies and programs generate useful errors.
+- Projects survive application restarts.
+- Simulation execution can be stopped safely.
+- Graphics settings affect real rendering behavior.
+- Offline core functionality works.
+- No primary action is a dead button.
+- No simulated metric is fabricated merely to populate a dashboard.
+- The app has been tested on a physical Android device.
+
+---
+
+23. Critical Implementation Rules for AI Coding
+
+1. Read and understand the existing project structure before editing.
+2. Establish a working architecture before generating large amounts of code.
+3. Build and test one phase at a time.
+4. Never claim that a feature works without implementing and validating its behavior.
+5. Never substitute mock data for actual simulation results.
+6. Never create decorative controls that imply unsupported functionality.
+7. Never remove completed functionality without explicit justification.
+8. Preserve user projects through migrations and backward-compatible loading where feasible.
+9. Keep rendering, simulation, UI, persistence, and program execution logically separated.
+10. Use modular, maintainable code rather than a single enormous source file.
+11. Verify Android permissions, lifecycle handling, and Gradle dependencies.
+12. Record unresolved technical issues rather than concealing them.
+13. Optimize after measuring performance, not through arbitrary feature removal.
+14. Do not introduce paid services or API dependencies without explicit approval.
+15. Maintain a clear implementation checklist and update it as work progresses.
+
+---
+
+24. Definition of Success
+
+RoboLab succeeds when users can do meaningful robotics work on an Android phone, rather than merely viewing a beautiful interface.
+
+The long-term vision is a mobile robotics laboratory with increasingly sophisticated robot construction, simulation, programming, sensing, and control.
+
+The immediate objective is narrower and measurable: deliver a polished Android application with a functional 3D workshop and one genuinely working, programmable simulated robot.
+
+Build a reliable engineering foundation first. Expand toward the full vision without compromising correctness, usability, or the zero-budget constraint.

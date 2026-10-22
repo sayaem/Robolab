@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">RoboLab</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_workshop">Workshop</string>
+    <string name="nav_simulator">Simulator</string>
+    <string name="nav_programming">Coding</string>
+    <string name="nav_projects">Projects</string>
+    <string name="nav_experiments">Labs</string>
+</resources>

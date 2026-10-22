@@ -1,0 +1,6 @@
+{
+  "name": "RoboLab",
+  "description": "Advanced mobile robotics engineering and simulation platform with interactive 3D assembly, kinematics physics, sensor telemetry, and visual programming.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
