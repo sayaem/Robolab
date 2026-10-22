@@ -61,6 +61,18 @@ class ProjectRepository(private val dao: ProjectDao) {
                 obstaclesJson = JsonHelper.serializeObstacles(emptyList())
             )
             dao.insertProject(p3)
+
+            // Seed Project 4: 3D Robotics Sandbox: Revolute Joint & Motor Slice
+            val sandboxAssembly = createMilestone1Assembly()
+            val p4 = ProjectEntity(
+                id = "proj_revolute_sandbox",
+                name = "3D Sandbox: Revolute Motor Mechanism",
+                description = "General-purpose 3D multi-body assembly with custom Box base, Cylinder pendulum, Sphere counterweight, and active Revolute Motor joint.",
+                assemblyJson = JsonHelper.serializeRoboLabAssembly(sandboxAssembly),
+                programJson = "[]",
+                obstaclesJson = "[]"
+            )
+            dao.insertProject(p4)
         }
     }
 
@@ -382,6 +394,83 @@ class ProjectRepository(private val dao: ProjectDao) {
                 Obstacle(id = "wall_3", name = "East Wall", posX = 2.0f, posZ = 0f, width = 0.3f, length = 4.0f, colorHex = 0xFF1E293B),
                 Obstacle(id = "wall_4", name = "West Wall", posX = -2.0f, posZ = 0f, width = 0.3f, length = 4.0f, colorHex = 0xFF1E293B),
                 Obstacle(id = "core_obs", name = "Center Block", posX = 0.3f, posZ = 0.8f, width = 0.7f, length = 0.7f, colorHex = 0xFF475569)
+            )
+        }
+
+        fun createMilestone1Assembly(): com.example.robolab.model.assembly.RoboLabAssembly {
+            val basePart = com.example.robolab.model.assembly.AssemblyPart(
+                id = "part_base_platform",
+                name = "Anchored Base Platform",
+                shapeType = com.example.robolab.model.assembly.ShapeType.BOX,
+                dimX = 0.40f,
+                dimY = 0.12f,
+                dimZ = 0.40f,
+                massKg = 5.0f,
+                isStatic = true,
+                colorHex = 0xFF1E293B,
+                posX = 0f,
+                posY = 0.06f,
+                posZ = 0f
+            )
+            val linkPart = com.example.robolab.model.assembly.AssemblyPart(
+                id = "part_articulated_arm",
+                name = "Articulated Pendulum Link",
+                shapeType = com.example.robolab.model.assembly.ShapeType.CYLINDER,
+                radius = 0.04f,
+                dimY = 0.38f,
+                massKg = 1.2f,
+                isStatic = false,
+                colorHex = 0xFF00B4D8,
+                posX = 0f,
+                posY = 0.35f,
+                posZ = 0f,
+                rotRollDeg = 15f
+            )
+            val tipSphere = com.example.robolab.model.assembly.AssemblyPart(
+                id = "part_counterweight",
+                name = "Counterweight Sphere",
+                shapeType = com.example.robolab.model.assembly.ShapeType.SPHERE,
+                radius = 0.07f,
+                massKg = 0.8f,
+                isStatic = false,
+                colorHex = 0xFFF59E0B,
+                posX = 0f,
+                posY = 0.58f,
+                posZ = 0f
+            )
+            val revoluteJoint = com.example.robolab.model.assembly.AssemblyJoint(
+                id = "joint_revolute_1",
+                name = "Revolute Hinge Motor",
+                type = com.example.robolab.model.assembly.JointType.REVOLUTE,
+                parentPartId = basePart.id,
+                childPartId = linkPart.id,
+                anchorParentY = 0.06f,
+                anchorChildY = -0.19f,
+                axisX = 1f,
+                axisY = 0f,
+                axisZ = 0f,
+                enableLimits = false,
+                enableMotor = true,
+                motorTargetVelocityRadPerSec = 2.5f,
+                motorMaxTorqueNm = 12.0f
+            )
+            val fixedJoint = com.example.robolab.model.assembly.AssemblyJoint(
+                id = "joint_fixed_1",
+                name = "Tip Weld Joint",
+                type = com.example.robolab.model.assembly.JointType.FIXED,
+                parentPartId = linkPart.id,
+                childPartId = tipSphere.id,
+                anchorParentY = 0.19f,
+                anchorChildY = 0f,
+                axisX = 0f,
+                axisY = 1f,
+                axisZ = 0f
+            )
+            return com.example.robolab.model.assembly.RoboLabAssembly(
+                id = "assembly_milestone_1",
+                name = "Articulated Revolute Mechanism",
+                parts = listOf(basePart, linkPart, tipSphere),
+                joints = listOf(revoluteJoint, fixedJoint)
             )
         }
     }

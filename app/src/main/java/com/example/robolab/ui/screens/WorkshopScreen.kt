@@ -1,12 +1,15 @@
 package com.example.robolab.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,14 +19,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.robolab.model.*
+import com.example.robolab.model.assembly.AssemblyJoint
+import com.example.robolab.model.assembly.AssemblyPart
+import com.example.robolab.model.assembly.JointType
+import com.example.robolab.model.assembly.ShapeType
+import com.example.robolab.renderer3d.AssemblyRenderer3D
+import com.example.robolab.renderer3d.Vector3
 import com.example.robolab.ui.components.EngineeringHeader
-import com.example.robolab.ui.components.InteractiveViewport3D
 import com.example.robolab.viewmodel.RoboLabViewModel
 import com.example.ui.theme.*
 
@@ -32,18 +40,19 @@ import com.example.ui.theme.*
 fun WorkshopScreen(
     viewModel: RoboLabViewModel
 ) {
-    val components by viewModel.components.collectAsState()
-    val selectedId by viewModel.selectedComponentId.collectAsState()
-    val validationIssues by viewModel.validationIssues.collectAsState()
+    val parts by viewModel.assemblyParts.collectAsState()
+    val joints by viewModel.assemblyJoints.collectAsState()
+    val selectedPartId by viewModel.selectedAssemblyPartId.collectAsState()
+    val selectedJointId by viewModel.selectedAssemblyJointId.collectAsState()
+    val dynamicPoses by viewModel.dynamicPoses.collectAsState()
     val activeProjectName by viewModel.activeProjectName.collectAsState()
     val graphicsProfile by viewModel.graphicsProfile.collectAsState()
 
-    var activeTab by remember { mutableStateOf(0) } // 0: 3D View & Inspector, 1: Component Library, 2: Assembly Tree, 3: Validation
-    var showAddDrawer by remember { mutableStateOf(false) }
+    var activeTab by remember { mutableStateOf(0) } // 0: 3D CAD & Inspector, 1: Add Part / Joint, 2: Assembly Tree
+    var showAddJointDialog by remember { mutableStateOf(false) }
 
-    val selectedComponent = components.find { it.id == selectedId }
-    val errorCount = validationIssues.count { it.severity == ValidationSeverity.ERROR }
-    val warningCount = validationIssues.count { it.severity == ValidationSeverity.WARNING }
+    val selectedPart = parts.find { it.id == selectedPartId }
+    val selectedJoint = joints.find { it.id == selectedJointId }
 
     Column(
         modifier = Modifier
@@ -52,44 +61,29 @@ fun WorkshopScreen(
             .testTag("workshop_screen")
     ) {
         EngineeringHeader(
-            title = "Robot Workshop",
+            title = "3D Workshop",
             subtitle = activeProjectName,
-            badgeText = "${components.size} PARTS",
+            badgeText = "${parts.size} PARTS | ${joints.size} JOINTS",
             actions = {
-                // Validation Status Chip
-                Surface(
-                    onClick = { activeTab = 3 },
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (errorCount == 0) SensorGreen.copy(alpha = 0.15f) else HazardRed.copy(alpha = 0.15f),
-                    border = CardDefaults.outlinedCardBorder().copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(if (errorCount == 0) SensorGreen else HazardRed)
-                    ),
-                    modifier = Modifier.testTag("chip_validation_status")
+                // Clear to empty workspace
+                TextButton(
+                    onClick = { viewModel.clearToEmptyWorkspace() },
+                    modifier = Modifier.testTag("btn_empty_workspace")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (errorCount == 0) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = if (errorCount == 0) SensorGreen else HazardRed,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = if (errorCount == 0) "VALID" else "$errorCount ERRORS",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = if (errorCount == 0) SensorGreen else HazardRed
-                        )
-                    }
+                    Text("Empty", color = HazardRed, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                }
+
+                // Milestone 1 vertical slice preset
+                TextButton(
+                    onClick = { viewModel.loadMilestone1Slice() },
+                    modifier = Modifier.testTag("btn_load_m1_slice")
+                ) {
+                    Text("Revolute Slice", color = ElectricCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }
         )
 
-        // Workshop Tabs (3D Canvas, Component Library, Hierarchy, Validation)
+        // Workshop Navigation Tabs
         TabRow(
             selectedTabIndex = activeTab,
             containerColor = DarkSurface,
@@ -99,253 +93,349 @@ fun WorkshopScreen(
             Tab(
                 selected = activeTab == 0,
                 onClick = { activeTab = 0 },
-                text = { Text("3D CAD", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                text = { Text("3D Workspace", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
                 icon = { Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("tab_3d_cad")
+                modifier = Modifier.testTag("tab_3d_workspace")
             )
             Tab(
                 selected = activeTab == 1,
                 onClick = { activeTab = 1 },
-                text = { Text("Library", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                text = { Text("Add Geometry", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
                 icon = { Icon(Icons.Default.AddBox, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("tab_component_library")
+                modifier = Modifier.testTag("tab_add_geometry")
             )
             Tab(
                 selected = activeTab == 2,
                 onClick = { activeTab = 2 },
-                text = { Text("Hierarchy", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                text = { Text("Hierarchy (${parts.size})", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
                 icon = { Icon(Icons.Default.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier.testTag("tab_hierarchy")
-            )
-            Tab(
-                selected = activeTab == 3,
-                onClick = { activeTab = 3 },
-                text = {
-                    Text(
-                        if (errorCount > 0) "Issues ($errorCount)" else "Validate",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                },
-                icon = { Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("tab_validation")
             )
         }
 
         when (activeTab) {
             0 -> {
-                // 3D Viewport with Bottom Inspector Sheet
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        InteractiveViewport3D(
-                            camera = viewModel.camera,
-                            components = components,
-                            selectedComponentId = selectedId,
-                            graphicsProfile = graphicsProfile,
-                            isWorkshopMode = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .padding(8.dp)
-                        )
+                // 3D CAD Canvas and Part/Joint Property Inspector
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(DarkSurface)
+                            .border(1.dp, DarkOutline, RoundedCornerShape(12.dp))
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    viewModel.camera.azimuthDeg = (viewModel.camera.azimuthDeg - pan.x * 0.45f) % 360f
+                                    viewModel.camera.elevationDeg = (viewModel.camera.elevationDeg + pan.y * 0.35f).coerceIn(8f, 85f)
+                                    viewModel.camera.distance = (viewModel.camera.distance / zoom).coerceIn(1.0f, 10.0f)
+                                }
+                            }
+                            .testTag("assembly_3d_viewport")
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            AssemblyRenderer3D.renderAssemblyScene(
+                                drawScope = this,
+                                camera = viewModel.camera,
+                                parts = parts,
+                                joints = joints,
+                                dynamicPoses = dynamicPoses,
+                                selectedPartId = selectedPartId,
+                                selectedJointId = selectedJointId,
+                                graphicsProfile = graphicsProfile,
+                                isWorkshopMode = true
+                            )
+                        }
 
-                        // Quick Horizontal Component Selector Ribbon
-                        LazyRow(
+                        // Viewport overlay controls (Reset camera, Zoom)
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .background(DarkSurfaceVariant)
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            items(components) { comp ->
-                                val isSelected = comp.id == selectedId
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.selectComponent(if (isSelected) null else comp.id) },
-                                    label = { Text(comp.name, fontSize = 11.sp, maxLines = 1) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = getComponentIcon(comp.type),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = if (isSelected) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ElectricCyan.copy(alpha = 0.2f),
-                                        selectedLabelColor = ElectricCyan
-                                    )
-                                )
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    viewModel.camera.azimuthDeg = 45f
+                                    viewModel.camera.elevationDeg = 30f
+                                    viewModel.camera.distance = 2.5f
+                                },
+                                containerColor = DarkSurface.copy(alpha = 0.85f),
+                                contentColor = ElectricCyan,
+                                shape = CircleShape,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(Icons.Default.RestartAlt, contentDescription = "Reset Camera", modifier = Modifier.size(16.dp))
                             }
                         }
 
-                        // Inspector Panel (if a component is selected)
-                        if (selectedComponent != null) {
-                            ComponentInspectorPanel(
-                                component = selectedComponent,
-                                onUpdate = { viewModel.updateComponent(it) },
-                                onDelete = { viewModel.removeComponent(selectedComponent.id) },
-                                onClose = { viewModel.selectComponent(null) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(240.dp)
-                                    .padding(8.dp)
-                            )
-                        } else {
+                        if (parts.isEmpty()) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
+                                    .align(Alignment.Center)
+                                    .padding(24.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(DarkSurfaceVariant.copy(alpha = 0.9f))
+                                    .border(1.dp, ElectricCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                    .padding(16.dp)
                             ) {
-                                Text(
-                                    text = "Select a component in the ribbon or Hierarchy tab to inspect parameters.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("EMPTY 3D WORKSPACE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = ElectricCyan, fontSize = 12.sp)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("Construct any robot from scratch using 3D primitives and joints.", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                    Spacer(Modifier.height(10.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { activeTab = 1 },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = DarkOnPrimary),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text("Add 3D Part", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        }
+                                        OutlinedButton(
+                                            onClick = { viewModel.loadMilestone1Slice() },
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text("Load M1 Slice", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Color.White)
+                                        }
+                                    }
+                                }
                             }
                         }
+                    }
+
+                    // Bottom Parts & Joints Ribbon Selector
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DarkSurfaceVariant)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(parts) { part ->
+                            val isSelected = part.id == selectedPartId
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.selectAssemblyPart(if (isSelected) null else part.id) },
+                                label = { Text(part.name, fontSize = 11.sp, maxLines = 1) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(part.colorHex))
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = ElectricCyan.copy(alpha = 0.25f),
+                                    selectedLabelColor = ElectricCyan
+                                )
+                            )
+                        }
+
+                        items(joints) { joint ->
+                            val isSelected = joint.id == selectedJointId
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.selectAssemblyJoint(if (isSelected) null else joint.id) },
+                                label = { Text(joint.name, fontSize = 11.sp, maxLines = 1) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Link, contentDescription = null, tint = if (joint.enableMotor) SensorGreen else CyberAmber, modifier = Modifier.size(12.dp))
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = TechBlue.copy(alpha = 0.25f),
+                                    selectedLabelColor = TechBlue
+                                )
+                            )
+                        }
+                    }
+
+                    // Inspector Drawer (Part or Joint)
+                    if (selectedPart != null) {
+                        AssemblyPartInspector(
+                            part = selectedPart,
+                            onUpdate = { viewModel.updateCustomPart(it) },
+                            onDelete = { viewModel.removeCustomPart(selectedPart.id) },
+                            onDuplicate = { viewModel.duplicateCustomPart(selectedPart.id) },
+                            onClose = { viewModel.selectAssemblyPart(null) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(270.dp)
+                                .padding(8.dp)
+                        )
+                    } else if (selectedJoint != null) {
+                        AssemblyJointInspector(
+                            joint = selectedJoint,
+                            onUpdate = { viewModel.updateCustomJoint(it) },
+                            onDelete = { viewModel.removeCustomJoint(selectedJoint.id) },
+                            onClose = { viewModel.selectAssemblyJoint(null) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(270.dp)
+                                .padding(8.dp)
+                        )
                     }
                 }
             }
 
             1 -> {
-                // Component Library Tab
-                ComponentLibraryView(
-                    onAddComponent = { type ->
-                        viewModel.addComponent(type)
+                // Add Geometry & Connect Joints Tab
+                AddGeometryAndJointsView(
+                    parts = parts,
+                    onAddPart = { shape ->
+                        viewModel.addCustomPart(shape)
                         activeTab = 0
-                    }
+                    },
+                    onOpenAddJoint = { showAddJointDialog = true }
                 )
             }
 
             2 -> {
-                // Assembly Hierarchy Tree View
-                HierarchyTreeView(
-                    components = components,
-                    selectedId = selectedId,
-                    onSelect = {
-                        viewModel.selectComponent(it)
+                // Assembly Scene Graph Hierarchy View
+                AssemblyHierarchyView(
+                    parts = parts,
+                    joints = joints,
+                    selectedPartId = selectedPartId,
+                    selectedJointId = selectedJointId,
+                    onSelectPart = {
+                        viewModel.selectAssemblyPart(it)
                         activeTab = 0
                     },
-                    onDelete = { viewModel.removeComponent(it) }
-                )
-            }
-
-            3 -> {
-                // Validation Checklist View
-                ValidationReportView(
-                    issues = validationIssues,
-                    onResolveIssue = { issue ->
-                        activeTab = 1 // Switch to library to add missing part
-                    }
+                    onSelectJoint = {
+                        viewModel.selectAssemblyJoint(it)
+                        activeTab = 0
+                    },
+                    onDeletePart = { viewModel.removeCustomPart(it) },
+                    onDeleteJoint = { viewModel.removeCustomJoint(it) }
                 )
             }
         }
     }
+
+    if (showAddJointDialog && parts.size >= 2) {
+        CreateJointDialog(
+            parts = parts,
+            onDismiss = { showAddJointDialog = false },
+            onCreate = { parentId, childId, type, axis, motor, speed, torque ->
+                viewModel.addCustomJoint(
+                    parentPartId = parentId,
+                    childPartId = childId,
+                    type = type,
+                    axis = axis,
+                    enableMotor = motor,
+                    motorTargetVelocity = speed,
+                    motorMaxTorque = torque
+                )
+                showAddJointDialog = false
+                activeTab = 0
+            }
+        )
+    }
 }
 
 @Composable
-fun ComponentLibraryView(
-    onAddComponent: (ComponentType) -> Unit
+fun AddGeometryAndJointsView(
+    parts: List<AssemblyPart>,
+    onAddPart: (ShapeType) -> Unit,
+    onOpenAddJoint: () -> Unit
 ) {
-    var selectedCategory by remember { mutableStateOf(ComponentCategory.STRUCTURAL) }
-
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "ADD ROBOT COMPONENT",
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(10.dp))
-
-        // Category Pills
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(ComponentCategory.values()) { category ->
-                FilterChip(
-                    selected = selectedCategory == category,
-                    onClick = { selectedCategory = category },
-                    label = { Text(category.title, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ElectricCyan.copy(alpha = 0.25f),
-                        selectedLabelColor = ElectricCyan
-                    )
-                )
-            }
+        item {
+            Text("CREATE 3D PRIMITIVE PART", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = ElectricCyan, fontSize = 12.sp)
+            Text("Spawn editable 3D primitive geometry in the workspace.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(12.dp))
 
-        val matchingTypes = ComponentType.values().filter { it.category == selectedCategory }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(matchingTypes) { type ->
-                Card(
+        items(ShapeType.values()) { shape ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAddPart(shape) }
+                    .testTag("btn_add_shape_${shape.name}"),
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkOutline)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onAddComponent(type) }
-                        .testTag("lib_item_${type.name}"),
-                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(DarkOutline)),
-                    shape = RoundedCornerShape(12.dp)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(DarkSurfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(getComponentIcon(type), contentDescription = null, tint = ElectricCyan, modifier = Modifier.size(24.dp))
-                            }
-                            Spacer(Modifier.width(14.dp))
-                            Column {
-                                Text(type.displayName, style = MaterialTheme.typography.titleSmall, color = Color.White)
-                                Text(getComponentDescription(type), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Button(
-                            onClick = { onAddComponent(type) },
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = DarkOnPrimary),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(DarkSurfaceVariant),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("Mount", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Icon(Icons.Default.Category, contentDescription = null, tint = ElectricCyan)
                         }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(shape.displayName, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                            Text(getShapeDesc(shape), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Button(
+                        onClick = { onAddPart(shape) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = DarkOnPrimary),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Add", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("MECHANICAL JOINTS", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = TechBlue, fontSize = 12.sp)
+            Text("Connect two 3D parts with a revolute hinge or fixed weld.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick = onOpenAddJoint,
+                enabled = parts.size >= 2,
+                colors = ButtonDefaults.buttonColors(containerColor = TechBlue, contentColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("btn_connect_joint_open")
+            ) {
+                Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (parts.size >= 2) "CONNECT TWO PARTS WITH JOINT" else "NEED AT LEAST 2 PARTS TO CONNECT",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun ComponentInspectorPanel(
-    component: RobotComponent,
-    onUpdate: (RobotComponent) -> Unit,
+fun AssemblyPartInspector(
+    part: AssemblyPart,
+    onUpdate: (AssemblyPart) -> Unit,
     onDelete: () -> Unit,
+    onDuplicate: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.testTag("component_inspector_panel"),
+        modifier = modifier.testTag("part_inspector_panel"),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(ElectricCyan.copy(alpha = 0.4f))),
+        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(ElectricCyan.copy(alpha = 0.5f))),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
@@ -359,16 +449,145 @@ fun ComponentInspectorPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(getComponentIcon(component.type), contentDescription = null, tint = ElectricCyan, modifier = Modifier.size(18.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(Color(part.colorHex))
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text(component.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    Text(part.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text("[${part.shapeType.name}]", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = ElectricCyan)
                 }
                 Row {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = HazardRed, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = onDuplicate, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = TechBlue, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = HazardRed, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            HorizontalDivider(color = DarkOutline, modifier = Modifier.padding(vertical = 4.dp))
+
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                // Dimensions
+                item {
+                    Text("Dimensions: ${part.getDimensionsSummary()}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = ElectricCyan)
+                    if (part.shapeType == ShapeType.BOX) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("W: ${"%.2f".format(part.dimX)}m", fontSize = 10.sp)
+                                Slider(value = part.dimX, onValueChange = { onUpdate(part.copy(dimX = it)) }, valueRange = 0.05f..1.0f)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("H: ${"%.2f".format(part.dimY)}m", fontSize = 10.sp)
+                                Slider(value = part.dimY, onValueChange = { onUpdate(part.copy(dimY = it)) }, valueRange = 0.05f..1.0f)
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("D: ${"%.2f".format(part.dimZ)}m", fontSize = 10.sp)
+                                Slider(value = part.dimZ, onValueChange = { onUpdate(part.copy(dimZ = it)) }, valueRange = 0.05f..1.0f)
+                            }
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Radius: ${"%.2f".format(part.radius)}m", fontSize = 10.sp)
+                                Slider(value = part.radius, onValueChange = { onUpdate(part.copy(radius = it)) }, valueRange = 0.03f..0.50f)
+                            }
+                            if (part.shapeType != ShapeType.SPHERE) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Height: ${"%.2f".format(part.dimY)}m", fontSize = 10.sp)
+                                    Slider(value = part.dimY, onValueChange = { onUpdate(part.copy(dimY = it)) }, valueRange = 0.05f..1.0f)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Spatial Position X, Y, Z
+                item {
+                    Text("Position (X, Y, Z)", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("X: ${"%.2f".format(part.posX)}", fontSize = 10.sp)
+                            Slider(value = part.posX, onValueChange = { onUpdate(part.copy(posX = it)) }, valueRange = -1.5f..1.5f)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("Y: ${"%.2f".format(part.posY)}", fontSize = 10.sp)
+                            Slider(value = part.posY, onValueChange = { onUpdate(part.copy(posY = it)) }, valueRange = 0.0f..2.0f)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("Z: ${"%.2f".format(part.posZ)}", fontSize = 10.sp)
+                            Slider(value = part.posZ, onValueChange = { onUpdate(part.copy(posZ = it)) }, valueRange = -1.5f..1.5f)
+                        }
+                    }
+                }
+
+                // Physical properties: Mass & Static toggle
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Anchored (Static Base):", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Switch(
+                            checked = part.isStatic,
+                            onCheckedChange = { onUpdate(part.copy(isStatic = it)) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = ElectricCyan)
+                        )
+                    }
+                    if (!part.isStatic) {
+                        Text("Mass: ${"%.1f".format(part.massKg)} kg", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        Slider(value = part.massKg, onValueChange = { onUpdate(part.copy(massKg = it)) }, valueRange = 0.1f..10.0f)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AssemblyJointInspector(
+    joint: AssemblyJoint,
+    onUpdate: (AssemblyJoint) -> Unit,
+    onDelete: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.testTag("joint_inspector_panel"),
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(TechBlue.copy(alpha = 0.5f))),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Link, contentDescription = null, tint = TechBlue, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(joint.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                }
+                Row {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = HazardRed, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -377,59 +596,59 @@ fun ComponentInspectorPanel(
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 item {
-                    // Position X Slider
-                    Text("Lateral Offset X: ${"%.2f".format(component.posX)}m", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Slider(
-                        value = component.posX,
-                        onValueChange = { onUpdate(component.copy(posX = it)) },
-                        valueRange = -0.30f..0.30f,
-                        steps = 12
-                    )
-                }
-                item {
-                    // Position Z Slider (Forward/Back)
-                    Text("Longitudinal Offset Z: ${"%.2f".format(component.posZ)}m", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Slider(
-                        value = component.posZ,
-                        onValueChange = { onUpdate(component.copy(posZ = it)) },
-                        valueRange = -0.30f..0.30f,
-                        steps = 12
-                    )
+                    Text("Joint Type: ${joint.type.displayName}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TechBlue)
                 }
 
-                if (component.type == ComponentType.LEFT_WHEEL || component.type == ComponentType.RIGHT_WHEEL) {
+                if (joint.type == JointType.REVOLUTE) {
                     item {
-                        Text("Wheel Radius: ${(component.wheelRadius * 1000).toInt()}mm", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = ElectricCyan)
-                        Slider(
-                            value = component.wheelRadius,
-                            onValueChange = { onUpdate(component.copy(wheelRadius = it)) },
-                            valueRange = 0.025f..0.090f,
-                            steps = 13
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Active Joint Motor:", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                            Switch(
+                                checked = joint.enableMotor,
+                                onCheckedChange = { onUpdate(joint.copy(enableMotor = it)) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = SensorGreen)
+                            )
+                        }
+
+                        if (joint.enableMotor) {
+                            Text("Target Velocity: ${"%.1f".format(joint.motorTargetVelocityRadPerSec)} rad/s", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                            Slider(
+                                value = joint.motorTargetVelocityRadPerSec,
+                                onValueChange = { onUpdate(joint.copy(motorTargetVelocityRadPerSec = it)) },
+                                valueRange = -10.0f..10.0f
+                            )
+                            Text("Max Torque: ${"%.1f".format(joint.motorMaxTorqueNm)} Nm", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                            Slider(
+                                value = joint.motorMaxTorqueNm,
+                                onValueChange = { onUpdate(joint.copy(motorMaxTorqueNm = it)) },
+                                valueRange = 1.0f..50.0f
+                            )
+                        }
                     }
-                }
 
-                if (component.type == ComponentType.DISTANCE_SENSOR || component.type == ComponentType.LIDAR_2D) {
                     item {
-                        Text("Sensor Max Range: ${"%.1f".format(component.sensorRangeM)}m", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = SensorGreen)
-                        Slider(
-                            value = component.sensorRangeM,
-                            onValueChange = { onUpdate(component.copy(sensorRangeM = it)) },
-                            valueRange = 1.0f..6.0f,
-                            steps = 10
-                        )
-                    }
-                }
-
-                if (component.type == ComponentType.ARM_LINK_1 || component.type == ComponentType.ARM_LINK_2) {
-                    item {
-                        Text("Joint Angle: ${component.jointAngleDeg.toInt()}°", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = VioletJoint)
-                        Slider(
-                            value = component.jointAngleDeg,
-                            onValueChange = { onUpdate(component.copy(jointAngleDeg = it)) },
-                            valueRange = -90f..90f,
-                            steps = 18
-                        )
+                        Text("Hinge Axis: [${joint.axisX.toInt()}, ${joint.axisY.toInt()}, ${joint.axisZ.toInt()}]", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = joint.axisX == 1f,
+                                onClick = { onUpdate(joint.copy(axisX = 1f, axisY = 0f, axisZ = 0f)) },
+                                label = { Text("Pitch (X)") }
+                            )
+                            FilterChip(
+                                selected = joint.axisY == 1f,
+                                onClick = { onUpdate(joint.copy(axisX = 0f, axisY = 1f, axisZ = 0f)) },
+                                label = { Text("Yaw (Y)") }
+                            )
+                            FilterChip(
+                                selected = joint.axisZ == 1f,
+                                onClick = { onUpdate(joint.copy(axisX = 0f, axisY = 0f, axisZ = 1f)) },
+                                label = { Text("Roll (Z)") }
+                            )
+                        }
                     }
                 }
             }
@@ -438,11 +657,15 @@ fun ComponentInspectorPanel(
 }
 
 @Composable
-fun HierarchyTreeView(
-    components: List<RobotComponent>,
-    selectedId: String?,
-    onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit
+fun AssemblyHierarchyView(
+    parts: List<AssemblyPart>,
+    joints: List<AssemblyJoint>,
+    selectedPartId: String?,
+    selectedJointId: String?,
+    onSelectPart: (String) -> Unit,
+    onSelectJoint: (String) -> Unit,
+    onDeletePart: (String) -> Unit,
+    onDeleteJoint: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -451,45 +674,80 @@ fun HierarchyTreeView(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-            Text(
-                text = "ROBOT SCENE GRAPH (${components.size} COMPONENTS)",
-                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("PARTS (${parts.size})", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = ElectricCyan, fontSize = 11.sp)
         }
-
-        items(components) { comp ->
-            val isSelected = comp.id == selectedId
-            val isChild = comp.parentId != null
+        items(parts) { part ->
+            val isSelected = part.id == selectedPartId
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = if (isChild) 24.dp else 0.dp)
-                    .clickable { onSelect(comp.id) }
-                    .testTag("hierarchy_item_${comp.id}"),
+                    .clickable { onSelectPart(part.id) }
+                    .testTag("hierarchy_part_${part.id}"),
                 colors = CardDefaults.cardColors(containerColor = if (isSelected) DarkSurfaceVariant else DarkSurface),
                 border = CardDefaults.outlinedCardBorder().copy(
                     brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) ElectricCyan else DarkOutline)
-                ),
-                shape = RoundedCornerShape(8.dp)
+                )
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(getComponentIcon(comp.type), contentDescription = null, tint = if (isSelected) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(part.colorHex))
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Column {
-                            Text(comp.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
-                            Text(comp.type.displayName, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
+                            Text(part.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                            Text("${part.shapeType.name} | ${if (part.isStatic) "Anchored" else "${part.massKg}kg"}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    IconButton(onClick = { onDelete(comp.id) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = { onDeletePart(part.id) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = HazardRed, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("JOINTS (${joints.size})", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = TechBlue, fontSize = 11.sp)
+        }
+        items(joints) { joint ->
+            val isSelected = joint.id == selectedJointId
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectJoint(joint.id) }
+                    .testTag("hierarchy_joint_${joint.id}"),
+                colors = CardDefaults.cardColors(containerColor = if (isSelected) DarkSurfaceVariant else DarkSurface),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) TechBlue else DarkOutline)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Link, contentDescription = null, tint = if (joint.enableMotor) SensorGreen else CyberAmber, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(joint.name, style = MaterialTheme.typography.titleSmall, color = Color.White)
+                            Text("${joint.type.displayName} ${if (joint.enableMotor) "| Motor On" else ""}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    IconButton(onClick = { onDeleteJoint(joint.id) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = HazardRed, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -498,106 +756,70 @@ fun HierarchyTreeView(
 }
 
 @Composable
-fun ValidationReportView(
-    issues: List<ValidationIssue>,
-    onResolveIssue: (ValidationIssue) -> Unit
+fun CreateJointDialog(
+    parts: List<AssemblyPart>,
+    onDismiss: () -> Unit,
+    onCreate: (String, String, JointType, Vector3, Boolean, Float, Float) -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(
-                text = "ASSEMBLY VALIDATION REPORT",
-                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    var parentId by remember { mutableStateOf(parts.first().id) }
+    var childId by remember { mutableStateOf(parts.getOrNull(1)?.id ?: parts.first().id) }
+    var jointType by remember { mutableStateOf(JointType.REVOLUTE) }
+    var axis by remember { mutableStateOf(Vector3(1f, 0f, 0f)) }
+    var motorOn by remember { mutableStateOf(true) }
+    var speed by remember { mutableFloatStateOf(2.5f) }
+    var torque by remember { mutableFloatStateOf(12.0f) }
 
-        if (issues.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = SensorGreen.copy(alpha = 0.1f)),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(SensorGreen.copy(alpha = 0.4f))),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SensorGreen, modifier = Modifier.size(28.dp))
-                        Spacer(Modifier.width(14.dp))
-                        Column {
-                            Text("Assembly Fully Validated", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                            Text("All mechanical constraints and differential kinematic requirements are satisfied.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DarkSurface,
+        title = { Text("Connect Parts with Joint", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Parent Part:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                parts.forEach { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = parentId == p.id, onClick = { parentId = p.id })
+                        Text(p.name, fontSize = 11.sp, color = Color.White)
                     }
                 }
-            }
-        } else {
-            items(issues) { issue ->
-                val badgeColor = when (issue.severity) {
-                    ValidationSeverity.ERROR -> HazardRed
-                    ValidationSeverity.WARNING -> CyberAmber
-                    ValidationSeverity.INFO -> TechBlue
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(badgeColor.copy(alpha = 0.5f))),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (issue.severity == ValidationSeverity.ERROR) Icons.Default.Cancel else Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = badgeColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(issue.title, style = MaterialTheme.typography.titleSmall, color = Color.White)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(issue.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Recommendation: ${issue.recommendation}", fontSize = 11.sp, color = badgeColor, fontFamily = FontFamily.Monospace)
+
+                Text("Child Part:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                parts.filter { it.id != parentId }.forEach { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = childId == p.id, onClick = { childId = p.id })
+                        Text(p.name, fontSize = 11.sp, color = Color.White)
                     }
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Enable Joint Motor:", fontSize = 11.sp)
+                    Switch(checked = motorOn, onCheckedChange = { motorOn = it })
+                }
             }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(parentId, childId, jointType, axis, motorOn, speed, torque) },
+                colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = DarkOnPrimary)
+            ) {
+                Text("Connect")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
         }
-    }
+    )
 }
 
-fun getComponentIcon(type: ComponentType): androidx.compose.ui.graphics.vector.ImageVector {
-    return when (type) {
-        ComponentType.CHASSIS -> Icons.Default.SquareFoot
-        ComponentType.LEFT_WHEEL, ComponentType.RIGHT_WHEEL, ComponentType.CASTER_WHEEL -> Icons.Default.Circle
-        ComponentType.DISTANCE_SENSOR -> Icons.Default.Sensors
-        ComponentType.LIDAR_2D -> Icons.Default.Radar
-        ComponentType.IMU_SENSOR -> Icons.Default.ScreenRotation
-        ComponentType.ARM_BASE, ComponentType.ARM_LINK_1, ComponentType.ARM_LINK_2 -> Icons.Default.PrecisionManufacturing
-        ComponentType.CONTROLLER -> Icons.Default.Memory
-        ComponentType.BATTERY_PACK -> Icons.Default.BatteryChargingFull
-    }
-}
-
-fun getComponentDescription(type: ComponentType): String {
-    return when (type) {
-        ComponentType.CHASSIS -> "Main rigid body platform with mounting holes"
-        ComponentType.LEFT_WHEEL -> "High traction rubber drive wheel for left motor shaft"
-        ComponentType.RIGHT_WHEEL -> "High traction rubber drive wheel for right motor shaft"
-        ComponentType.CASTER_WHEEL -> "Passive omnidirectional swivel ball caster for balance"
-        ComponentType.DISTANCE_SENSOR -> "Ultrasonic pulse transducer for frontal collision detection"
-        ComponentType.LIDAR_2D -> "High-speed 360-degree laser range scanner"
-        ComponentType.IMU_SENSOR -> "3-axis gyroscope and 3-axis accelerometer sensor"
-        ComponentType.ARM_BASE -> "Revolute servo turntable mounting joint"
-        ComponentType.ARM_LINK_1 -> "160mm aluminum shoulder link for arm reach"
-        ComponentType.ARM_LINK_2 -> "140mm articulated forearm segment"
-        ComponentType.CONTROLLER -> "Embedded ARM microcontroller running control loop"
-        ComponentType.BATTERY_PACK -> "High-current lithium-polymer power pack"
+fun getShapeDesc(shape: ShapeType): String {
+    return when (shape) {
+        ShapeType.BOX -> "Rectangular cuboid with custom width, height, and depth"
+        ShapeType.CYLINDER -> "Rotational cylinder with radius and height"
+        ShapeType.SPHERE -> "Omnidirectional sphere primitive"
+        ShapeType.CAPSULE -> "Cylinder body with rounded hemisphere caps"
     }
 }

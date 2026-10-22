@@ -193,4 +193,167 @@ object JsonHelper {
         }
         return list
     }
+
+    fun serializeAssemblyParts(parts: List<com.example.robolab.model.assembly.AssemblyPart>): String {
+        val array = JSONArray()
+        for (p in parts) {
+            val obj = JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                put("shapeType", p.shapeType.name)
+                put("dimX", p.dimX.toDouble())
+                put("dimY", p.dimY.toDouble())
+                put("dimZ", p.dimZ.toDouble())
+                put("radius", p.radius.toDouble())
+                put("massKg", p.massKg.toDouble())
+                put("isStatic", p.isStatic)
+                put("friction", p.friction.toDouble())
+                put("restitution", p.restitution.toDouble())
+                put("colorHex", p.colorHex)
+                put("posX", p.posX.toDouble())
+                put("posY", p.posY.toDouble())
+                put("posZ", p.posZ.toDouble())
+                put("rotYawDeg", p.rotYawDeg.toDouble())
+                put("rotPitchDeg", p.rotPitchDeg.toDouble())
+                put("rotRollDeg", p.rotRollDeg.toDouble())
+                put("parentId", p.parentId ?: JSONObject.NULL)
+            }
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    fun deserializeAssemblyParts(json: String): List<com.example.robolab.model.assembly.AssemblyPart> {
+        val list = mutableListOf<com.example.robolab.model.assembly.AssemblyPart>()
+        try {
+            val array = JSONArray(json)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val shapeName = obj.optString("shapeType", "BOX")
+                val shapeType = try { com.example.robolab.model.assembly.ShapeType.valueOf(shapeName) } catch (_: Exception) { com.example.robolab.model.assembly.ShapeType.BOX }
+                list.add(
+                    com.example.robolab.model.assembly.AssemblyPart(
+                        id = obj.optString("id"),
+                        name = obj.optString("name", "Part"),
+                        shapeType = shapeType,
+                        dimX = obj.optDouble("dimX", 0.2).toFloat(),
+                        dimY = obj.optDouble("dimY", 0.2).toFloat(),
+                        dimZ = obj.optDouble("dimZ", 0.2).toFloat(),
+                        radius = obj.optDouble("radius", 0.1).toFloat(),
+                        massKg = obj.optDouble("massKg", 1.0).toFloat(),
+                        isStatic = obj.optBoolean("isStatic", false),
+                        friction = obj.optDouble("friction", 0.6).toFloat(),
+                        restitution = obj.optDouble("restitution", 0.2).toFloat(),
+                        colorHex = obj.optLong("colorHex", 0xFF00B4D8),
+                        posX = obj.optDouble("posX", 0.0).toFloat(),
+                        posY = obj.optDouble("posY", 0.5).toFloat(),
+                        posZ = obj.optDouble("posZ", 0.0).toFloat(),
+                        rotYawDeg = obj.optDouble("rotYawDeg", 0.0).toFloat(),
+                        rotPitchDeg = obj.optDouble("rotPitchDeg", 0.0).toFloat(),
+                        rotRollDeg = obj.optDouble("rotRollDeg", 0.0).toFloat(),
+                        parentId = if (obj.isNull("parentId")) null else obj.optString("parentId")
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        return list
+    }
+
+    fun serializeAssemblyJoints(joints: List<com.example.robolab.model.assembly.AssemblyJoint>): String {
+        val array = JSONArray()
+        for (j in joints) {
+            val obj = JSONObject().apply {
+                put("id", j.id)
+                put("name", j.name)
+                put("type", j.type.name)
+                put("parentPartId", j.parentPartId)
+                put("childPartId", j.childPartId)
+                put("anchorParentX", j.anchorParentX.toDouble())
+                put("anchorParentY", j.anchorParentY.toDouble())
+                put("anchorParentZ", j.anchorParentZ.toDouble())
+                put("anchorChildX", j.anchorChildX.toDouble())
+                put("anchorChildY", j.anchorChildY.toDouble())
+                put("anchorChildZ", j.anchorChildZ.toDouble())
+                put("axisX", j.axisX.toDouble())
+                put("axisY", j.axisY.toDouble())
+                put("axisZ", j.axisZ.toDouble())
+                put("enableLimits", j.enableLimits)
+                put("lowerLimitDeg", j.lowerLimitDeg.toDouble())
+                put("upperLimitDeg", j.upperLimitDeg.toDouble())
+                put("enableMotor", j.enableMotor)
+                put("motorTargetVelocityRadPerSec", j.motorTargetVelocityRadPerSec.toDouble())
+                put("motorMaxTorqueNm", j.motorMaxTorqueNm.toDouble())
+            }
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    fun deserializeAssemblyJoints(json: String): List<com.example.robolab.model.assembly.AssemblyJoint> {
+        val list = mutableListOf<com.example.robolab.model.assembly.AssemblyJoint>()
+        try {
+            val array = JSONArray(json)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val typeName = obj.optString("type", "REVOLUTE")
+                val type = try { com.example.robolab.model.assembly.JointType.valueOf(typeName) } catch (_: Exception) { com.example.robolab.model.assembly.JointType.REVOLUTE }
+                list.add(
+                    com.example.robolab.model.assembly.AssemblyJoint(
+                        id = obj.optString("id"),
+                        name = obj.optString("name", "Joint"),
+                        type = type,
+                        parentPartId = obj.optString("parentPartId"),
+                        childPartId = obj.optString("childPartId"),
+                        anchorParentX = obj.optDouble("anchorParentX", 0.0).toFloat(),
+                        anchorParentY = obj.optDouble("anchorParentY", 0.0).toFloat(),
+                        anchorParentZ = obj.optDouble("anchorParentZ", 0.0).toFloat(),
+                        anchorChildX = obj.optDouble("anchorChildX", 0.0).toFloat(),
+                        anchorChildY = obj.optDouble("anchorChildY", 0.0).toFloat(),
+                        anchorChildZ = obj.optDouble("anchorChildZ", 0.0).toFloat(),
+                        axisX = obj.optDouble("axisX", 0.0).toFloat(),
+                        axisY = obj.optDouble("axisY", 1.0).toFloat(),
+                        axisZ = obj.optDouble("axisZ", 0.0).toFloat(),
+                        enableLimits = obj.optBoolean("enableLimits", false),
+                        lowerLimitDeg = obj.optDouble("lowerLimitDeg", -90.0).toFloat(),
+                        upperLimitDeg = obj.optDouble("upperLimitDeg", 90.0).toFloat(),
+                        enableMotor = obj.optBoolean("enableMotor", false),
+                        motorTargetVelocityRadPerSec = obj.optDouble("motorTargetVelocityRadPerSec", 2.0).toFloat(),
+                        motorMaxTorqueNm = obj.optDouble("motorMaxTorqueNm", 15.0).toFloat()
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        return list
+    }
+
+    fun serializeRoboLabAssembly(assembly: com.example.robolab.model.assembly.RoboLabAssembly): String {
+        val obj = JSONObject()
+        obj.put("id", assembly.id)
+        obj.put("name", assembly.name)
+        obj.put("parts", JSONArray(serializeAssemblyParts(assembly.parts)))
+        obj.put("joints", JSONArray(serializeAssemblyJoints(assembly.joints)))
+        obj.put("gravityY", assembly.gravityY.toDouble())
+        return obj.toString()
+    }
+
+    fun deserializeRoboLabAssembly(json: String): com.example.robolab.model.assembly.RoboLabAssembly {
+        try {
+            if (json.startsWith("{")) {
+                val obj = JSONObject(json)
+                val id = obj.optString("id", java.util.UUID.randomUUID().toString())
+                val name = obj.optString("name", "Custom Assembly")
+                val partsJson = obj.optJSONArray("parts")?.toString() ?: "[]"
+                val jointsJson = obj.optJSONArray("joints")?.toString() ?: "[]"
+                val grav = obj.optDouble("gravityY", -9.81).toFloat()
+                return com.example.robolab.model.assembly.RoboLabAssembly(
+                    id = id,
+                    name = name,
+                    parts = deserializeAssemblyParts(partsJson),
+                    joints = deserializeAssemblyJoints(jointsJson),
+                    gravityY = grav
+                )
+            }
+        } catch (_: Exception) {}
+        return com.example.robolab.model.assembly.RoboLabAssembly()
+    }
 }

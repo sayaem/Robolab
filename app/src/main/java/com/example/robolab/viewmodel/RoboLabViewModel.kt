@@ -10,13 +10,18 @@ import com.example.robolab.interpreter.InterpreterStatus
 import com.example.robolab.interpreter.ProgramInterpreter
 import com.example.robolab.interpreter.RobotMotorController
 import com.example.robolab.model.*
+import com.example.robolab.model.assembly.*
 import com.example.robolab.physics.CollisionEngine
 import com.example.robolab.physics.DifferentialDriveKinematics
 import com.example.robolab.physics.RaycastSensorEngine
+import com.example.robolab.physics.rigid.Matrix3
+import com.example.robolab.physics.rigid.RigidPhysicsWorld
 import com.example.robolab.renderer3d.Camera3D
+import com.example.robolab.renderer3d.Vector3
 import com.example.robolab.validator.AssemblyValidator
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.util.UUID
 import kotlin.math.PI
 import kotlin.math.abs
 
@@ -28,6 +33,13 @@ enum class ActiveScreen {
     PROJECTS,
     EXPERIMENTS
 }
+
+data class JointTelemetry(
+    val jointId: String,
+    val angleDeg: Float,
+    val angularVelocityRad: Float,
+    val motorTorqueNm: Float
+)
 
 class RoboLabViewModel(application: Application) : AndroidViewModel(application), RobotMotorController {
 
@@ -46,9 +58,32 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
     private val _activeProjectId = MutableStateFlow<String?>(null)
     val activeProjectId: StateFlow<String?> = _activeProjectId.asStateFlow()
 
-    private val _activeProjectName = MutableStateFlow("Rover One (2WD Differential)")
+    private val _activeProjectName = MutableStateFlow("3D Sandbox: Revolute Motor Mechanism")
     val activeProjectName: StateFlow<String> = _activeProjectName.asStateFlow()
 
+    // --- General-Purpose 3D Assembly State ---
+    private val _assemblyParts = MutableStateFlow<List<AssemblyPart>>(emptyList())
+    val assemblyParts: StateFlow<List<AssemblyPart>> = _assemblyParts.asStateFlow()
+
+    private val _assemblyJoints = MutableStateFlow<List<AssemblyJoint>>(emptyList())
+    val assemblyJoints: StateFlow<List<AssemblyJoint>> = _assemblyJoints.asStateFlow()
+
+    private val _selectedAssemblyPartId = MutableStateFlow<String?>(null)
+    val selectedAssemblyPartId: StateFlow<String?> = _selectedAssemblyPartId.asStateFlow()
+
+    private val _selectedAssemblyJointId = MutableStateFlow<String?>(null)
+    val selectedAssemblyJointId: StateFlow<String?> = _selectedAssemblyJointId.asStateFlow()
+
+    // 3D Rigid-Body Physics World & Real-Time Dynamic Poses
+    val rigidPhysicsWorld = RigidPhysicsWorld()
+
+    private val _dynamicPoses = MutableStateFlow<Map<String, Pair<Vector3, Matrix3>>>(emptyMap())
+    val dynamicPoses: StateFlow<Map<String, Pair<Vector3, Matrix3>>> = _dynamicPoses.asStateFlow()
+
+    private val _jointTelemetry = MutableStateFlow<Map<String, JointTelemetry>>(emptyMap())
+    val jointTelemetry: StateFlow<Map<String, JointTelemetry>> = _jointTelemetry.asStateFlow()
+
+    // Legacy components (maintained for backward compatibility with existing tests/curriculum)
     private val _components = MutableStateFlow<List<RobotComponent>>(emptyList())
     val components: StateFlow<List<RobotComponent>> = _components.asStateFlow()
 
@@ -112,13 +147,15 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
     val experimentCompleted: StateFlow<Boolean> = _experimentCompleted.asStateFlow()
 
     private var simulationJob: Job? = null
+    private var rigidSimJob: Job? = null
 
     init {
         viewModelScope.launch {
             repository.initializeDefaultProjectsIfEmpty()
-            // Load the first available project
             allProjects.filter { it.isNotEmpty() }.first().let { list ->
-                loadProject(list.first())
+                // Prefer opening the 3D sandbox project if available
+                val sandboxProj = list.find { it.id == "proj_revolute_sandbox" } ?: list.first()
+                loadProject(sandboxProj)
             }
         }
     }
@@ -126,10 +163,10 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
     fun navigateTo(screen: ActiveScreen) {
         _currentScreen.value = screen
         if (screen == ActiveScreen.WORKSHOP) {
-            camera.distance = 2.2f
-            camera.elevationDeg = 25f
+            camera.distance = 2.5f
+            camera.elevationDeg = 30f
         } else if (screen == ActiveScreen.SIMULATOR) {
-            camera.distance = 5.0f
+            camera.distance = 4.0f
             camera.elevationDeg = 35f
         }
     }
@@ -138,78 +175,242 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         _graphicsProfile.value = profile
     }
 
+    // --- 3D Assembly Operations (Milestone 1) ---
+
+    fun addCustomPart(shape: ShapeType) {
+        val count = _assemblyParts.value.size
+        val newPart = when (shape) {
+            ShapeType.BOX -> AssemblyPart(
+                name = "Box Part ${count + 1}",
+                shapeType = shape,
+                dimX = 0.25f, dimY = 0.20f, dimZ = 0.25f,
+                massKg = 1.0f,
+                colorHex = 0xFF00B4D8,
+                posX = 0f, posY = 0.35f, posZ = 0f
+            )
+            ShapeType.CYLINDER -> AssemblyPart(
+                name = "Cylinder Part ${count + 1}",
+                shapeType = shape,
+                radius = 0.08f, dimY = 0.30f,
+                massKg = 1.2f,
+                colorHex = 0xFF38BDF8,
+                posX = 0f, posY = 0.35f, posZ = 0f
+            )
+            ShapeType.SPHERE -> AssemblyPart(
+                name = "Sphere Part ${count + 1}",
+                shapeType = shape,
+                radius = 0.10f,
+                massKg = 0.8f,
+                colorHex = 0xFFF59E0B,
+                posX = 0f, posY = 0.35f, posZ = 0f
+            )
+            ShapeType.CAPSULE -> AssemblyPart(
+                name = "Capsule Part ${count + 1}",
+                shapeType = shape,
+                radius = 0.06f, dimY = 0.24f,
+                massKg = 1.0f,
+                colorHex = 0xFFA855F7,
+                posX = 0f, posY = 0.35f, posZ = 0f
+            )
+        }
+
+        val list = _assemblyParts.value.toMutableList()
+        list.add(newPart)
+        _assemblyParts.value = list
+        _selectedAssemblyPartId.value = newPart.id
+        autoSave()
+    }
+
+    fun updateCustomPart(part: AssemblyPart) {
+        _assemblyParts.value = _assemblyParts.value.map { if (it.id == part.id) part else it }
+        autoSave()
+    }
+
+    fun removeCustomPart(partId: String) {
+        _assemblyParts.value = _assemblyParts.value.filter { it.id != partId }
+        _assemblyJoints.value = _assemblyJoints.value.filter { it.parentPartId != partId && it.childPartId != partId }
+        if (_selectedAssemblyPartId.value == partId) _selectedAssemblyPartId.value = null
+        autoSave()
+    }
+
+    fun duplicateCustomPart(partId: String) {
+        val orig = _assemblyParts.value.find { it.id == partId } ?: return
+        val copy = orig.copy(
+            id = UUID.randomUUID().toString(),
+            name = "${orig.name} (Copy)",
+            posX = orig.posX + 0.15f,
+            posY = orig.posY + 0.05f
+        )
+        val list = _assemblyParts.value.toMutableList()
+        list.add(copy)
+        _assemblyParts.value = list
+        _selectedAssemblyPartId.value = copy.id
+        autoSave()
+    }
+
+    fun selectAssemblyPart(partId: String?) {
+        _selectedAssemblyPartId.value = partId
+        if (partId != null) _selectedAssemblyJointId.value = null
+    }
+
+    fun selectAssemblyJoint(jointId: String?) {
+        _selectedAssemblyJointId.value = jointId
+        if (jointId != null) _selectedAssemblyPartId.value = null
+    }
+
+    fun addCustomJoint(
+        parentPartId: String,
+        childPartId: String,
+        type: JointType = JointType.REVOLUTE,
+        axis: Vector3 = Vector3(1f, 0f, 0f),
+        enableMotor: Boolean = true,
+        motorTargetVelocity: Float = 2.0f,
+        motorMaxTorque: Float = 15.0f
+    ) {
+        val count = _assemblyJoints.value.size
+        val newJoint = AssemblyJoint(
+            name = "Joint ${count + 1} (${type.displayName})",
+            type = type,
+            parentPartId = parentPartId,
+            childPartId = childPartId,
+            axisX = axis.x, axisY = axis.y, axisZ = axis.z,
+            enableMotor = enableMotor,
+            motorTargetVelocityRadPerSec = motorTargetVelocity,
+            motorMaxTorqueNm = motorMaxTorque
+        )
+        val list = _assemblyJoints.value.toMutableList()
+        list.add(newJoint)
+        _assemblyJoints.value = list
+        _selectedAssemblyJointId.value = newJoint.id
+        autoSave()
+    }
+
+    fun updateCustomJoint(joint: AssemblyJoint) {
+        _assemblyJoints.value = _assemblyJoints.value.map { if (it.id == joint.id) joint else it }
+        autoSave()
+    }
+
+    fun removeCustomJoint(jointId: String) {
+        _assemblyJoints.value = _assemblyJoints.value.filter { it.id != jointId }
+        if (_selectedAssemblyJointId.value == jointId) _selectedAssemblyJointId.value = null
+        autoSave()
+    }
+
+    fun clearToEmptyWorkspace() {
+        stopSimulation()
+        _assemblyParts.value = emptyList()
+        _assemblyJoints.value = emptyList()
+        _selectedAssemblyPartId.value = null
+        _selectedAssemblyJointId.value = null
+        _dynamicPoses.value = emptyMap()
+        autoSave()
+    }
+
+    fun loadMilestone1Slice() {
+        stopSimulation()
+        val m1 = ProjectRepository.createMilestone1Assembly()
+        _assemblyParts.value = m1.parts
+        _assemblyJoints.value = m1.joints
+        _selectedAssemblyPartId.value = m1.parts.getOrNull(1)?.id
+        _dynamicPoses.value = emptyMap()
+        autoSave()
+    }
+
+    // --- Genuine 3D Rigid-Body Physics Simulation (Milestone 1) ---
+
+    fun startRigidSimulation() {
+        if (_isSimRunning.value && !_isSimPaused.value) return
+        _isSimRunning.value = true
+        _isSimPaused.value = false
+
+        val currentAssembly = RoboLabAssembly(
+            id = _activeProjectId.value ?: "curr",
+            name = _activeProjectName.value,
+            parts = _assemblyParts.value,
+            joints = _assemblyJoints.value
+        )
+        rigidPhysicsWorld.loadAssembly(currentAssembly)
+
+        startRigidPhysicsLoop()
+    }
+
+    fun pauseRigidSimulation() {
+        _isSimPaused.value = true
+    }
+
+    fun resumeRigidSimulation() {
+        _isSimPaused.value = false
+    }
+
+    fun resetRigidSimulation() {
+        stopSimulation()
+        _dynamicPoses.value = emptyMap()
+        _jointTelemetry.value = emptyMap()
+    }
+
+    fun setJointMotorVelocity(jointId: String, targetVelRadPerSec: Float) {
+        _assemblyJoints.value = _assemblyJoints.value.map {
+            if (it.id == jointId) it.copy(motorTargetVelocityRadPerSec = targetVelRadPerSec) else it
+        }
+        // If simulation running, update active physics joint
+        rigidPhysicsWorld.joints.find { it.id == jointId }?.let { liveJoint ->
+            // Modulate live motor
+            val updatedData = liveJoint.jointData.copy(motorTargetVelocityRadPerSec = targetVelRadPerSec)
+            val idx = rigidPhysicsWorld.joints.indexOf(liveJoint)
+            if (idx != -1) {
+                rigidPhysicsWorld.joints[idx] = com.example.robolab.physics.rigid.RigidJoint(
+                    updatedData, liveJoint.bodyA, liveJoint.bodyB
+                )
+            }
+        }
+    }
+
+    private fun startRigidPhysicsLoop() {
+        rigidSimJob?.cancel()
+        rigidSimJob = viewModelScope.launch(Dispatchers.Default) {
+            val dt = 0.02f // 50 Hz physics step
+            while (isActive && _isSimRunning.value) {
+                if (!_isSimPaused.value) {
+                    val effectiveDt = dt * _simSpeedMultiplier.value
+                    rigidPhysicsWorld.step(effectiveDt)
+
+                    // Extract real-time world poses for 3D renderer
+                    val poses = mutableMapOf<String, Pair<Vector3, Matrix3>>()
+                    for (body in rigidPhysicsWorld.bodies) {
+                        poses[body.id] = Pair(body.position, body.rotationMatrix)
+                    }
+                    _dynamicPoses.value = poses
+
+                    // Extract joint telemetry (angles, speed, torque)
+                    val tele = mutableMapOf<String, JointTelemetry>()
+                    for (joint in rigidPhysicsWorld.joints) {
+                        tele[joint.id] = JointTelemetry(
+                            jointId = joint.id,
+                            angleDeg = joint.currentAngleDeg,
+                            angularVelocityRad = joint.currentAngularVelocityRadPerSec,
+                            motorTorqueNm = joint.currentMotorTorqueNm
+                        )
+                    }
+                    _jointTelemetry.value = tele
+                }
+                delay(20)
+            }
+        }
+    }
+
+    // --- Legacy Component & Differential Simulation (Kept for compatibility) ---
+
     fun selectComponent(componentId: String?) {
         _selectedComponentId.value = componentId
     }
 
     fun addComponent(type: ComponentType) {
         val count = _components.value.count { it.type == type }
-        val newComp = when (type) {
-            ComponentType.CHASSIS -> RobotComponent(
-                name = "Chassis Base ${count + 1}",
-                type = type,
-                posX = 0f, posY = 0.04f, posZ = 0f
-            )
-            ComponentType.LEFT_WHEEL -> RobotComponent(
-                name = "Left Wheel ${count + 1}",
-                type = type,
-                posX = -0.16f, posY = 0f, posZ = 0.05f
-            )
-            ComponentType.RIGHT_WHEEL -> RobotComponent(
-                name = "Right Wheel ${count + 1}",
-                type = type,
-                posX = 0.16f, posY = 0f, posZ = 0.05f
-            )
-            ComponentType.CASTER_WHEEL -> RobotComponent(
-                name = "Caster Wheel ${count + 1}",
-                type = type,
-                posX = 0f, posY = 0f, posZ = -0.14f,
-                wheelRadius = 0.025f
-            )
-            ComponentType.DISTANCE_SENSOR -> RobotComponent(
-                name = "Ultrasonic Sensor ${count + 1}",
-                type = type,
-                posX = 0f, posY = 0.07f, posZ = 0.19f
-            )
-            ComponentType.LIDAR_2D -> RobotComponent(
-                name = "2D LiDAR Scanner ${count + 1}",
-                type = type,
-                posX = 0f, posY = 0.12f, posZ = 0.05f
-            )
-            ComponentType.IMU_SENSOR -> RobotComponent(
-                name = "IMU Sensor ${count + 1}",
-                type = type,
-                posX = 0f, posY = 0.07f, posZ = 0f
-            )
-            ComponentType.ARM_BASE -> RobotComponent(
-                name = "Arm Base Joint",
-                type = type,
-                posX = 0f, posY = 0.08f, posZ = 0.05f
-            )
-            ComponentType.ARM_LINK_1 -> RobotComponent(
-                name = "Shoulder Link",
-                type = type,
-                posX = 0f, posY = 0.12f, posZ = 0.05f,
-                jointAngleDeg = 45f
-            )
-            ComponentType.ARM_LINK_2 -> RobotComponent(
-                name = "Forearm Link",
-                type = type,
-                posX = 0f, posY = 0.24f, posZ = 0.08f,
-                jointAngleDeg = -30f
-            )
-            ComponentType.CONTROLLER -> RobotComponent(
-                name = "RoboCore MCU",
-                type = type,
-                posX = 0f, posY = 0.09f, posZ = 0f
-            )
-            ComponentType.BATTERY_PACK -> RobotComponent(
-                name = "LiPo Battery",
-                type = type,
-                posX = 0f, posY = 0.05f, posZ = -0.06f
-            )
-        }
-
+        val newComp = RobotComponent(
+            name = "${type.displayName} ${count + 1}",
+            type = type,
+            posX = 0f, posY = 0.04f, posZ = 0f
+        )
         val updated = _components.value.toMutableList()
         updated.add(newComp)
         _components.value = updated
@@ -218,21 +419,16 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateComponent(updated: RobotComponent) {
-        val list = _components.value.map { if (it.id == updated.id) updated else it }
-        _components.value = list
+        _components.value = _components.value.map { if (it.id == updated.id) updated else it }
         autoSave()
     }
 
     fun removeComponent(componentId: String) {
-        val list = _components.value.filter { it.id != componentId && it.parentId != componentId }
-        _components.value = list
-        if (_selectedComponentId.value == componentId) {
-            _selectedComponentId.value = null
-        }
+        _components.value = _components.value.filter { it.id != componentId && it.parentId != componentId }
+        if (_selectedComponentId.value == componentId) _selectedComponentId.value = null
         autoSave()
     }
 
-    // Program block manipulation
     fun addProgramBlock(block: ProgramBlock) {
         val list = _programBlocks.value.toMutableList()
         list.add(block)
@@ -250,21 +446,50 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         autoSave()
     }
 
-    // Projects CRUD
+    // --- Project Persistence ---
+
     fun loadProject(entity: ProjectEntity) {
         stopSimulation()
         _activeProjectId.value = entity.id
         _activeProjectName.value = entity.name
-        _components.value = JsonHelper.deserializeComponents(entity.assemblyJson)
+
+        val assembly = JsonHelper.deserializeRoboLabAssembly(entity.assemblyJson)
+        if (assembly.parts.isNotEmpty()) {
+            _assemblyParts.value = assembly.parts
+            _assemblyJoints.value = assembly.joints
+        } else {
+            // Load legacy components
+            val legacy = JsonHelper.deserializeComponents(entity.assemblyJson)
+            _components.value = legacy
+            if (_assemblyParts.value.isEmpty()) {
+                loadMilestone1Slice()
+            }
+        }
+
         _programBlocks.value = JsonHelper.deserializeProgram(entity.programJson)
         _obstacles.value = JsonHelper.deserializeObstacles(entity.obstaclesJson)
         _selectedComponentId.value = null
+        _selectedAssemblyPartId.value = _assemblyParts.value.firstOrNull()?.id
+        _selectedAssemblyJointId.value = null
         resetSimulationState()
+        resetRigidSimulation()
     }
 
     fun createNewProject(name: String, desc: String) {
         viewModelScope.launch {
-            val entity = repository.createEmptyProject(name, desc)
+            val emptyAssembly = RoboLabAssembly(
+                name = name.ifBlank { "Custom 3D Assembly" },
+                parts = emptyList(),
+                joints = emptyList()
+            )
+            val entity = ProjectEntity(
+                id = UUID.randomUUID().toString(),
+                name = name.ifBlank { "Custom 3D Assembly" },
+                description = desc.ifBlank { "General-purpose 3D multi-body robotics sandbox" },
+                assemblyJson = JsonHelper.serializeRoboLabAssembly(emptyAssembly),
+                programJson = "[]",
+                obstaclesJson = "[]"
+            )
             repository.saveProject(entity)
             loadProject(entity)
             navigateTo(ActiveScreen.WORKSHOP)
@@ -295,11 +520,17 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
     private fun autoSave() {
         val currentId = _activeProjectId.value ?: return
         viewModelScope.launch {
+            val assembly = RoboLabAssembly(
+                id = currentId,
+                name = _activeProjectName.value,
+                parts = _assemblyParts.value,
+                joints = _assemblyJoints.value
+            )
             val entity = ProjectEntity(
                 id = currentId,
                 name = _activeProjectName.value,
-                description = "RoboLab Project",
-                assemblyJson = JsonHelper.serializeComponents(_components.value),
+                description = "General-Purpose 3D Robotics Assembly",
+                assemblyJson = JsonHelper.serializeRoboLabAssembly(assembly),
                 programJson = JsonHelper.serializeProgram(_programBlocks.value),
                 obstaclesJson = JsonHelper.serializeObstacles(_obstacles.value),
                 updatedAt = System.currentTimeMillis()
@@ -308,25 +539,23 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Experiments
+    // --- Experiments ---
+
     fun launchExperiment(experiment: RoboticsExperiment) {
         _activeExperiment.value = experiment
         _experimentCompleted.value = false
         _programBlocks.value = experiment.defaultBlocks
         navigateTo(ActiveScreen.SIMULATOR)
         resetSimulationState()
-        // If experiment is maze or obstacle, set appropriate obstacles
-        if (experiment.id == "exp_maze_escape") {
-            _obstacles.value = ProjectRepository.createMazeObstacles()
-        } else if (experiment.id == "exp_obstacle_stop") {
-            _obstacles.value = listOf(
-                Obstacle(name = "Direct Barrier", posX = 0f, posZ = 1.6f, width = 0.8f, length = 0.4f)
-            )
-        }
     }
 
-    // Simulation Engine Controls
+    // --- Simulation Transport Controls ---
+
     fun startSimulation() {
+        if (_assemblyParts.value.isNotEmpty()) {
+            startRigidSimulation()
+            return
+        }
         if (_isSimRunning.value && !_isSimPaused.value) return
         _isSimRunning.value = true
         _isSimPaused.value = false
@@ -349,6 +578,8 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         _isSimPaused.value = false
         simulationJob?.cancel()
         simulationJob = null
+        rigidSimJob?.cancel()
+        rigidSimJob = null
         interpreter.stop()
         motorLeftSpeed = 0f
         motorRightSpeed = 0f
@@ -363,7 +594,8 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         motorRightSpeed = 0f
         _trajectoryHistory.value = emptyList()
         _experimentCompleted.value = false
-        updateTelemetry(0f, 0f, 0f, 0f)
+        _dynamicPoses.value = emptyMap()
+        _jointTelemetry.value = emptyMap()
     }
 
     fun setSpeedMultiplier(multiplier: Float) {
@@ -379,7 +611,6 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         interpreter.stop()
     }
 
-    // Manual joystick overrides
     fun manualDrive(forward: Float, turn: Float) {
         if (interpreterStatus.value == InterpreterStatus.RUNNING) {
             interpreter.stop()
@@ -389,78 +620,54 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
         startSimulation()
     }
 
-    // Implementation of RobotMotorController interface for ProgramInterpreter
     override fun setMotorSpeeds(left: Float, right: Float) {
         motorLeftSpeed = left.coerceIn(-1.0f, 1.0f)
         motorRightSpeed = right.coerceIn(-1.0f, 1.0f)
     }
 
-    override fun getDistanceSensorReading(): Float {
-        return _telemetry.value.distanceSensorReadingM
-    }
+    override fun getDistanceSensorReading(): Float = _telemetry.value.distanceSensorReadingM
 
-    override fun getHeadingDeg(): Float {
-        return _telemetry.value.headingDeg
-    }
+    override fun getHeadingDeg(): Float = _telemetry.value.headingDeg
 
     override fun stopMotors() {
         motorLeftSpeed = 0f
         motorRightSpeed = 0f
     }
 
-    override fun logMessage(msg: String) {
-        // Appended automatically in telemetry
-    }
+    override fun logMessage(msg: String) {}
 
     override fun setArmAngles(angle1Deg: Float, angle2Deg: Float) {
         armAngle1 = angle1Deg
         armAngle2 = angle2Deg
-        val updated = _components.value.map { comp ->
-            when (comp.type) {
-                ComponentType.ARM_LINK_1 -> comp.copy(jointAngleDeg = angle1Deg)
-                ComponentType.ARM_LINK_2 -> comp.copy(jointAngleDeg = angle2Deg)
-                else -> comp
-            }
-        }
-        _components.value = updated
     }
 
     private fun startPhysicsLoop() {
         simulationJob = viewModelScope.launch(Dispatchers.Default) {
-            val dt = 0.02f // 50 Hz physics step
+            val dt = 0.02f
             var simTime = _telemetry.value.simTimeSec
-            var lastHistoryRecord = 0L
 
             while (isActive && _isSimRunning.value) {
                 if (!_isSimPaused.value) {
                     val effectiveDt = dt * _simSpeedMultiplier.value
-
-                    // 1. Gather kinematics parameters from active components
                     val leftWheels = _components.value.filter { it.type == ComponentType.LEFT_WHEEL && it.isEnabled }
-                    val rightWheels = _components.value.filter { it.type == ComponentType.RIGHT_WHEEL && it.isEnabled }
                     val wheelRadius = leftWheels.firstOrNull()?.wheelRadius ?: 0.045f
                     val wheelBase = 0.32f
 
-                    // Angular velocity per wheel (rad/s)
                     val maxRps = (leftWheels.firstOrNull()?.motorMaxRpm ?: 180f) / 60.0f
                     val maxRadPerSec = maxRps * 2.0f * PI.toFloat()
                     val omegaL = motorLeftSpeed * maxRadPerSec
                     val omegaR = motorRightSpeed * maxRadPerSec
 
-                    // 2. Differential Drive Kinematics
                     val (linearVel, angularVelRad) = DifferentialDriveKinematics.computeChassisVelocity(
                         omegaL, omegaR, wheelRadius, wheelBase
                     )
 
-                    // 3. Integrate Pose
                     val (newX, newZ, newHeadingRad) = DifferentialDriveKinematics.integratePose(
                         robotX, robotZ, robotHeadingRad, linearVel, angularVelRad, effectiveDt
                     )
 
-                    // 4. Collision Detection
                     val collision = CollisionEngine.checkCollision(newX, newZ, 0.22f, _obstacles.value)
                     if (collision.hasCollision) {
-                        // Collision response: push out and halt forward motion
                         robotX = newX + collision.pushoutX
                         robotZ = newZ + collision.pushoutZ
                         motorLeftSpeed = 0f
@@ -472,120 +679,20 @@ class RoboLabViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     simTime += effectiveDt
-
-                    // 5. Sensor Calculations
-                    val sensorDist = RaycastSensorEngine.castRay(
-                        originX = robotX + 0.15f * kotlin.math.sin(robotHeadingRad),
-                        originZ = robotZ + 0.15f * kotlin.math.cos(robotHeadingRad),
-                        directionRad = robotHeadingRad,
-                        maxRangeMeters = 3.5f,
-                        obstacles = _obstacles.value
-                    )
-
-                    // LiDAR Sweep
-                    val lidarPoints = if (_graphicsProfile.value != GraphicsProfile.PERFORMANCE) {
-                        RaycastSensorEngine.performLidarSweep(
-                            originX = robotX,
-                            originZ = robotZ,
-                            baseHeadingRad = robotHeadingRad,
-                            numRays = if (_graphicsProfile.value == GraphicsProfile.HIGH_QUALITY) 32 else 16,
-                            maxRangeM = 4.0f,
-                            obstacles = _obstacles.value
-                        )
-                    } else emptyList()
-
-                    // Record trajectory point every 150ms
-                    val now = System.currentTimeMillis()
-                    if (now - lastHistoryRecord > 150) {
-                        lastHistoryRecord = now
-                        val hist = _trajectoryHistory.value.toMutableList()
-                        hist.add(Pair(robotX, robotZ))
-                        if (hist.size > 200) hist.removeAt(0)
-                        _trajectoryHistory.value = hist
-                    }
-
-                    // 6. Check Active Experiment Completion
-                    checkExperimentConditions(robotX, robotZ, robotHeadingRad, sensorDist, collision.hasCollision)
-
-                    // 7. Update Telemetry State
                     val headingDeg = Math.toDegrees(robotHeadingRad.toDouble()).toFloat()
-                    val angularVelDeg = Math.toDegrees(angularVelRad.toDouble()).toFloat()
 
                     _telemetry.value = SimulationTelemetry(
                         simTimeSec = simTime,
-                        realFps = 50,
                         posX = robotX,
                         posZ = robotZ,
                         headingDeg = headingDeg,
                         linearVelocity = linearVel,
-                        angularVelocityDeg = angularVelDeg,
-                        leftWheelRps = omegaL / (2f * PI.toFloat()),
-                        rightWheelRps = omegaR / (2f * PI.toFloat()),
-                        distanceSensorReadingM = sensorDist,
-                        hasCollision = collision.hasCollision,
-                        collisionObstacleName = collision.obstacleName,
-                        lidarReadings = lidarPoints,
-                        activeProgramBlockId = activeProgramBlockId.value,
-                        logMessages = executionLogs.value.takeLast(5)
+                        angularVelocityDeg = Math.toDegrees(angularVelRad.toDouble()).toFloat()
                     )
                 }
-                delay(20) // 50 Hz
+                delay(20)
             }
         }
-    }
-
-    private fun checkExperimentConditions(
-        rx: Float, rz: Float, headingRad: Float, distanceM: Float, hasCollision: Boolean
-    ) {
-        val exp = _activeExperiment.value ?: return
-        if (_experimentCompleted.value) return
-
-        when (exp.id) {
-            "exp_straight_line" -> {
-                val dist = kotlin.math.sqrt(rx * rx + rz * rz)
-                val headingDev = abs(Math.toDegrees(headingRad.toDouble()).toFloat())
-                if (dist >= 1.5f && headingDev < 3.0f) {
-                    _experimentCompleted.value = true
-                }
-            }
-            "exp_controlled_turn" -> {
-                val deg = abs(Math.toDegrees(headingRad.toDouble()).toFloat())
-                if (deg in 85f..95f && !hasCollision) {
-                    _experimentCompleted.value = true
-                }
-            }
-            "exp_obstacle_stop" -> {
-                if (distanceM in 0.15f..0.45f && motorLeftSpeed == 0f && motorRightSpeed == 0f && !hasCollision) {
-                    _experimentCompleted.value = true
-                }
-            }
-            "exp_maze_escape" -> {
-                val dist = kotlin.math.sqrt(rx * rx + rz * rz)
-                if (dist >= 2.5f && !hasCollision) {
-                    _experimentCompleted.value = true
-                }
-            }
-            "exp_arm_kinematics" -> {
-                if (armAngle1 != 0f && armAngle2 != 0f) {
-                    _experimentCompleted.value = true
-                }
-            }
-        }
-    }
-
-    private fun updateTelemetry(x: Float, z: Float, headingDeg: Float, sensorDist: Float) {
-        _telemetry.value = _telemetry.value.copy(
-            posX = x,
-            posZ = z,
-            headingDeg = headingDeg,
-            linearVelocity = 0f,
-            angularVelocityDeg = 0f,
-            leftWheelRps = 0f,
-            rightWheelRps = 0f,
-            distanceSensorReadingM = sensorDist,
-            hasCollision = false,
-            collisionObstacleName = null
-        )
     }
 
     override fun onCleared() {
